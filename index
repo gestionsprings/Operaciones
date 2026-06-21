@@ -1,0 +1,541 @@
+import React, { useState, useEffect, useCallback } from 'react';
+
+const EMPLOYEES = [
+  { id: 1, name: 'ANDRES ARROYAVE', type: 'vinculado' },
+  { id: 2, name: 'JHONAL', type: 'vinculado' },
+  { id: 3, name: 'JUAN DAVID YEPEZ', type: 'vinculado' },
+  { id: 4, name: 'MARIA PAULA', type: 'no_vinculado' },
+  { id: 5, name: 'DUBAN', type: 'no_vinculado' },
+  { id: 6, name: 'CAMILO', type: 'no_vinculado' },
+  { id: 7, name: 'LUIS', type: 'no_vinculado' },
+  { id: 8, name: 'ANA SOFIA', type: 'no_vinculado' },
+  { id: 9, name: 'ANA MARIA', type: 'no_vinculado' },
+  { id: 10, name: 'VALERIA RODAS', type: 'no_vinculado' },
+  { id: 11, name: 'APOYO LIMPIEZA JUGOS', type: 'apoyo' }
+];
+
+const DAYS = ['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO', 'DOMINGO'];
+const SHIFTS = {
+  EMPTY: '',
+  MORNING: '7:00 a 4:00pm',
+  EVENING: '12:00 a 9:00pm',
+  OFF: 'LIBRE'
+};
+
+const DAY_ABBR = { 'LUNES': 'L', 'MARTES': 'M', 'MIERCOLES': 'X', 'JUEVES': 'J', 'VIERNES': 'V', 'SABADO': 'S', 'DOMINGO': 'D' };
+
+const INITIAL_OCCUPANCY = {
+  LUNES: { hospedaje: 29, diaSol: 0 },
+  MARTES: { hospedaje: 29, diaSol: 2 },
+  MIERCOLES: { hospedaje: 25, diaSol: 9 },
+  JUEVES: { hospedaje: 29, diaSol: 2 },
+  VIERNES: { hospedaje: 14, diaSol: 0 },
+  SABADO: { hospedaje: 61, diaSol: 4 },
+  DOMINGO: { hospedaje: 45, diaSol: 8 }
+};
+
+export default function HorarioBarApp() {
+  const [schedule, setSchedule] = useState({});
+  const [weekLabel, setWeekLabel] = useState('22 - 28 JUNIO');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [useApoyo, setUseApoyo] = useState(false); 
+  
+  const [occupancy, setOccupancy] = useState(INITIAL_OCCUPANCY);
+  const [prevSundayHospedaje, setPrevSundayHospedaje] = useState(45); 
+  
+  const [capacity, setCapacity] = useState(65);
+  const [thresholds, setThresholds] = useState({ media: 50, alta: 70 });
+  const [paxPerWorker, setPaxPerWorker] = useState(10); 
+  
+  const [calculatedDemand, setCalculatedDemand] = useState({});
+
+  // La estructura de restricciones cambia para soportar estados de medio turno
+  const [restrictions, setRestrictions] = useState({
+    1: { LUNES: 'BLOCKED_ALL' },
+    2: { MARTES: 'BLOCKED_ALL' },
+    3: { MIERCOLES: 'BLOCKED_ALL' }
+  });
+
+  const getDemandLevel = useCallback((count) => {
+    const percentage = (count / capacity) * 100;
+    if (percentage >= thresholds.alta) return 'Alta';
+    if (percentage >= thresholds.media) return 'Media';
+    return 'Baja';
+  }, [capacity, thresholds]);
+
+  useEffect(() => {
+    const newDemand = {};
+    DAYS.forEach((day, index) => {
+      const currentOcc = occupancy[day];
+      
+      const huespedesAnterior = index === 0 ? prevSundayHospedaje : occupancy[DAYS[index - 1]].hospedaje;
+      const pTarde = currentOcc.hospedaje + currentOcc.diaSol; 
+      const pNoche = currentOcc.hospedaje;
+
+      // Determinamos los niveles antes para poder aplicar la regla del Buffet
+      const mananaNivel = getDemandLevel(huespedesAnterior);
+
+      // Cálculo de requerimiento matemáticamente redondeado según pax/trabajador
+      let reqM = Math.max(1, Math.round(huespedesAnterior / paxPerWorker));
+      const reqT = Math.max(1, Math.round(pTarde / paxPerWorker));
+      const reqN = Math.max(1, Math.round(pNoche / paxPerWorker));
+
+      let isBuffet = false;
+      // Regla Especial: Si la mañana es "Alta", se limitan a 3 trabajadores y es formato Buffet
+      if (mananaNivel === 'Alta') {
+        reqM = 3;
+        isBuffet = true;
+      }
+
+      newDemand[day] = {
+        mananaCount: huespedesAnterior,
+        tardeCount: pTarde,
+        nocheCount: pNoche,
+        mananaPercentage: Math.round((huespedesAnterior / capacity) * 100),
+        tardePercentage: Math.round((pTarde / capacity) * 100),
+        nochePercentage: Math.round((pNoche / capacity) * 100),
+        manana: mananaNivel,
+        tarde: getDemandLevel(pTarde),
+        noche: getDemandLevel(pNoche),
+        reqM, reqT, reqN, isBuffet
+      };
+    });
+    setCalculatedDemand(newDemand);
+  }, [occupancy, prevSundayHospedaje, capacity, getDemandLevel, paxPerWorker]);
+
+  useEffect(() => {
+    clearSchedule();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const clearSchedule = () => {
+    const newSchedule = {};
+    EMPLOYEES.forEach(emp => {
+      newSchedule[emp.id] = {};
+      DAYS.forEach(day => newSchedule[emp.id][day] = SHIFTS.EMPTY);
+    });
+    setSchedule(newSchedule);
+  };
+
+  const handleOccupancyChange = (day, field, value) => {
+    const numValue = parseInt(value) || 0;
+    setOccupancy(prev => ({
+      ...prev,
+      [day]: { ...prev[day], [field]: numValue }
+    }));
+  };
+
+  const generateSchedule = () => {
+    if (Object.keys(calculatedDemand).length === 0) return;
+    
+    setIsGenerating(true);
+    const newSchedule = {};
+    
+    EMPLOYEES.forEach(emp => {
+      newSchedule[emp.id] = {};
+      DAYS.forEach(day => newSchedule[emp.id][day] = SHIFTS.OFF);
+    });
+
+    DAYS.forEach(day => {
+      const currentDemand = calculatedDemand[day];
+      
+      let requiredMorning = currentDemand.reqM;
+      let requiredEvening = currentDemand.reqN;
+      const targetAfternoon = currentDemand.reqT;
+
+      const apoyoEmp = EMPLOYEES.find(e => e.type === 'apoyo');
+      // Asegurar que el apoyo no esté bloqueado totalmente ni bloqueado en la mañana
+      if (useApoyo && apoyoEmp && restrictions[apoyoEmp.id]?.[day] !== 'BLOCKED_ALL' && restrictions[apoyoEmp.id]?.[day] !== 'ONLY_EVENING') {
+        newSchedule[apoyoEmp.id][day] = SHIFTS.MORNING;
+        // NUEVA REGLA: El apoyo de jugos descuenta un trabajador, PERO el bar nunca puede quedar solo (mínimo 1)
+        requiredMorning = Math.max(1, requiredMorning - 1); 
+      }
+
+      while (requiredMorning + requiredEvening < targetAfternoon) {
+        if (requiredMorning <= requiredEvening) requiredMorning++;
+        else requiredEvening++;
+      }
+
+      let morningAssigned = 0;
+      let eveningAssigned = 0;
+
+      EMPLOYEES.filter(e => e.type === 'vinculado').forEach(emp => {
+        const res = restrictions[emp.id]?.[day];
+        if (res === 'BLOCKED_ALL') {
+          newSchedule[emp.id][day] = SHIFTS.OFF;
+        } else if (res === 'ONLY_MORNING') {
+          newSchedule[emp.id][day] = SHIFTS.MORNING;
+          morningAssigned++;
+        } else if (res === 'ONLY_EVENING') {
+          newSchedule[emp.id][day] = SHIFTS.EVENING;
+          eveningAssigned++;
+        } else {
+          // Asignación inteligente: priorizar siempre donde hay más necesidad
+          if (requiredMorning > 0 && morningAssigned === 0) {
+            newSchedule[emp.id][day] = SHIFTS.MORNING; // Asegurar apertura
+            morningAssigned++;
+          } else if (requiredEvening > 0 && eveningAssigned === 0) {
+            newSchedule[emp.id][day] = SHIFTS.EVENING; // Asegurar cierre
+            eveningAssigned++;
+          } else {
+            const mNeed = requiredMorning - morningAssigned;
+            const eNeed = requiredEvening - eveningAssigned;
+            
+            if (mNeed > eNeed) {
+              newSchedule[emp.id][day] = SHIFTS.MORNING;
+              morningAssigned++;
+            } else if (eNeed > mNeed) {
+              newSchedule[emp.id][day] = SHIFTS.EVENING;
+              eveningAssigned++;
+            } else {
+              // Si la necesidad es igual en ambos lados, balancea
+              if (morningAssigned <= eveningAssigned && morningAssigned < 3) {
+                newSchedule[emp.id][day] = SHIFTS.MORNING;
+                morningAssigned++;
+              } else {
+                newSchedule[emp.id][day] = SHIFTS.EVENING;
+                eveningAssigned++;
+              }
+            }
+          }
+        }
+      });
+
+      let noVinculadosDisponibles = EMPLOYEES.filter(e => 
+        e.type === 'no_vinculado' && restrictions[e.id]?.[day] !== 'BLOCKED_ALL'
+      );
+      
+      noVinculadosDisponibles = noVinculadosDisponibles.sort(() => Math.random() - 0.5);
+
+      noVinculadosDisponibles.forEach(emp => {
+        const res = restrictions[emp.id]?.[day];
+        const canMorning = res !== 'ONLY_EVENING';
+        const canEvening = res !== 'ONLY_MORNING';
+
+        // Solo los asigna si el algoritmo lo necesita Y su color se lo permite
+        if (morningAssigned < requiredMorning && canMorning) {
+          newSchedule[emp.id][day] = SHIFTS.MORNING;
+          morningAssigned++;
+        } else if (eveningAssigned < requiredEvening && canEvening) {
+          newSchedule[emp.id][day] = SHIFTS.EVENING;
+          eveningAssigned++;
+        }
+      });
+    });
+
+    setTimeout(() => {
+      setSchedule(newSchedule);
+      setIsGenerating(false);
+    }, 500);
+  };
+
+  const updateCell = (empId, day, newShift) => {
+    setSchedule(prev => ({
+      ...prev,
+      [empId]: { ...prev[empId], [day]: newShift }
+    }));
+  };
+
+  // Función reescrita para ciclar entre los 4 estados de disponibilidad
+  const toggleRestriction = (empId, day) => {
+    setRestrictions(prev => {
+      const empRestrictions = prev[empId] || {};
+      const currentState = empRestrictions[day];
+      let nextState;
+
+      if (!currentState) nextState = 'BLOCKED_ALL'; // De Libre a Rojo
+      else if (currentState === 'BLOCKED_ALL') nextState = 'ONLY_MORNING'; // De Rojo a Naranja
+      else if (currentState === 'ONLY_MORNING') nextState = 'ONLY_EVENING'; // De Naranja a Morado
+      else nextState = null; // De Morado vuelve a Libre
+
+      const newEmpRes = { ...empRestrictions };
+      if (nextState) {
+        newEmpRes[day] = nextState;
+      } else {
+        delete newEmpRes[day];
+      }
+      
+      return { ...prev, [empId]: newEmpRes };
+    });
+  };
+
+  const getCellColor = (shift) => {
+    if (shift === SHIFTS.OFF) return 'text-red-600 font-bold';
+    return 'text-gray-800';
+  };
+
+  const getDailyTotals = (day) => {
+    let morning = 0;
+    let evening = 0;
+    EMPLOYEES.forEach(emp => {
+      if (schedule[emp.id] && schedule[emp.id][day] === SHIFTS.MORNING) morning++;
+      if (schedule[emp.id] && schedule[emp.id][day] === SHIFTS.EVENING) evening++;
+    });
+    return { morning, evening };
+  };
+
+  const demandBadgeColor = (level) => {
+    if (level === 'Alta') return 'bg-red-100 text-red-800 border-red-200';
+    if (level === 'Media') return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+    return 'bg-green-100 text-green-800 border-green-200';
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans">
+      <div className="max-w-7xl mx-auto space-y-6">
+        
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800">Programador Inteligente de Horarios</h1>
+              <p className="text-gray-600">Ingresa la ocupación y el sistema calculará personal y turnos según tus reglas.</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={clearSchedule} className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-md font-medium transition-colors text-sm">
+                Limpiar
+              </button>
+              <button onClick={generateSchedule} disabled={isGenerating} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md font-medium transition-colors flex items-center justify-center min-w-[180px] shadow-sm">
+                {isGenerating ? 'Calculando...' : 'Generar Horario'}
+              </button>
+            </div>
+          </div>
+          
+          {}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-2">
+            
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 flex flex-col gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Semana del Horario</label>
+                <input type="text" value={weekLabel} onChange={(e) => setWeekLabel(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Huéspedes del Domingo Anterior</label>
+                <p className="text-[10px] text-gray-500 mb-1 leading-tight">Define el personal base para el Lunes en la Mañana.</p>
+                <input type="number" min="0" value={prevSundayHospedaje} onChange={(e) => setPrevSundayHospedaje(parseInt(e.target.value)||0)} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white font-bold text-blue-900" />
+              </div>
+              <label className="flex items-center cursor-pointer gap-2 bg-green-50 p-3 rounded-md border border-green-200 mt-auto hover:bg-green-100 transition-colors shadow-sm">
+                <input type="checkbox" checked={useApoyo} onChange={(e) => setUseApoyo(e.target.checked)} className="w-5 h-5 text-green-600 rounded focus:ring-green-500 cursor-pointer" />
+                <span className="text-sm font-bold text-green-800">Usar Apoyo Jugos (Mañanas)</span>
+              </label>
+            </div>
+
+            <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
+              <div className="bg-[#fcd34d] px-4 py-2 flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-gray-300 gap-2">
+                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Datos de Ocupación</h3>
+                <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-gray-800">
+                  <div className="flex items-center gap-1 bg-white/70 px-2 py-1 rounded shadow-sm">
+                    <span>Capacidad (100%):</span>
+                    <input type="number" min="1" value={capacity} onChange={e => setCapacity(parseInt(e.target.value)||1)} className="w-14 px-1 py-0.5 border border-gray-300 rounded text-center outline-none focus:ring-1 focus:ring-blue-500"/>
+                  </div>
+                  
+                  <div className="flex items-center gap-1 bg-blue-100 px-2 py-1 rounded border border-blue-200 shadow-sm">
+                    <span className="text-blue-900 font-bold">Pax / Trabajador:</span>
+                    <input type="number" min="1" value={paxPerWorker} onChange={e => setPaxPerWorker(parseInt(e.target.value)||1)} className="w-12 px-1 py-0.5 border border-blue-300 rounded text-center outline-none focus:ring-1 focus:ring-blue-500 bg-white font-bold"/>
+                  </div>
+
+                  <div className="flex items-center gap-1 bg-white/70 px-2 py-1 rounded shadow-sm">
+                    <span>Media {`>=`}%</span>
+                    <input type="number" value={thresholds.media} onChange={e => setThresholds(p => ({...p, media: parseInt(e.target.value)||0}))} className="w-10 px-1 py-0.5 border border-gray-300 rounded text-center outline-none"/>
+                  </div>
+                  <div className="flex items-center gap-1 bg-white/70 px-2 py-1 rounded shadow-sm">
+                    <span>Alta {`>=`}%</span>
+                    <input type="number" value={thresholds.alta} onChange={e => setThresholds(p => ({...p, alta: parseInt(e.target.value)||0}))} className="w-10 px-1 py-0.5 border border-gray-300 rounded text-center outline-none"/>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-orange-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-700">Día</th>
+                      <th className="px-3 py-2 text-center font-semibold text-gray-700 border-x border-gray-200">Hospedaje</th>
+                      <th className="px-3 py-2 text-center font-semibold text-gray-700 border-r border-gray-200">+ Día Sol</th>
+                      <th className="px-3 py-2 text-center text-xs font-bold text-blue-900 bg-blue-50/50">Cálculo Mañana</th>
+                      <th className="px-3 py-2 text-center text-xs font-bold text-blue-900 bg-blue-50/50 border-l border-white">Cálculo Tarde</th>
+                      <th className="px-3 py-2 text-center text-xs font-bold text-blue-900 bg-blue-50/50 border-l border-white">Cálculo Noche</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {DAYS.map(day => {
+                      const calc = calculatedDemand[day];
+                      return (
+                        <tr key={`occ-${day}`} className="hover:bg-gray-50">
+                          <td className="px-3 py-1.5 font-medium text-gray-700">{day}</td>
+                          <td className="px-3 py-1.5 text-center border-x border-gray-100">
+                            <input type="number" min="0" value={occupancy[day].hospedaje} onChange={(e) => handleOccupancyChange(day, 'hospedaje', e.target.value)} className="w-16 px-2 py-1 text-center border border-gray-300 rounded focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none shadow-inner" />
+                          </td>
+                          <td className="px-3 py-1.5 text-center border-r border-gray-100">
+                            <input type="number" min="0" value={occupancy[day].diaSol} onChange={(e) => handleOccupancyChange(day, 'diaSol', e.target.value)} className="w-16 px-2 py-1 text-center border border-gray-300 rounded focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none shadow-inner" />
+                          </td>
+                          {calc && (
+                            <React.Fragment>
+                              <td className="px-2 py-1.5 text-center bg-blue-50/20">
+                                <div className="flex flex-col items-center justify-center">
+                                  <span className="text-[10px] text-gray-500 font-medium leading-none mb-1 whitespace-nowrap">{calc.mananaCount} pax ({calc.mananaPercentage}%)</span>
+                                  <div className="flex items-center gap-1">
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${demandBadgeColor(calc.manana)}`}>{calc.manana}</span>
+                                    <span className="text-[11px] bg-blue-600 text-white font-bold px-1.5 py-0.5 rounded shadow-sm" title={`Requeridos: ${calc.reqM}`}>{calc.reqM} 👤</span>
+                                  </div>
+                                  {calc.isBuffet && (
+                                    <span className="mt-1 text-[9px] bg-purple-100 text-purple-800 font-bold px-1.5 py-0.5 rounded border border-purple-300 shadow-sm">
+                                      🍲 BUFFET
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-2 py-1.5 text-center bg-blue-50/20 border-l border-gray-100">
+                                <div className="flex flex-col items-center justify-center">
+                                  <span className="text-[10px] text-gray-500 font-medium leading-none mb-1 whitespace-nowrap">{calc.tardeCount} pax ({calc.tardePercentage}%)</span>
+                                  <div className="flex items-center gap-1">
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${demandBadgeColor(calc.tarde)}`}>{calc.tarde}</span>
+                                    <span className="text-[11px] bg-blue-600 text-white font-bold px-1.5 py-0.5 rounded shadow-sm" title={`Requeridos: ${calc.reqT}`}>{calc.reqT} 👤</span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-2 py-1.5 text-center bg-blue-50/20 border-l border-gray-100">
+                                <div className="flex flex-col items-center justify-center">
+                                  <span className="text-[10px] text-gray-500 font-medium leading-none mb-1 whitespace-nowrap">{calc.nocheCount} pax ({calc.nochePercentage}%)</span>
+                                  <div className="flex items-center gap-1">
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${demandBadgeColor(calc.noche)}`}>{calc.noche}</span>
+                                    <span className="text-[11px] bg-blue-600 text-white font-bold px-1.5 py-0.5 rounded shadow-sm" title={`Requeridos: ${calc.reqN}`}>{calc.reqN} 👤</span>
+                                  </div>
+                                </div>
+                              </td>
+                            </React.Fragment>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        {}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse min-w-[1100px]">
+              <thead>
+                <tr>
+                  <th colSpan={DAYS.length + 2} className="bg-white text-center py-2 text-lg font-bold border border-gray-300 shadow-sm relative z-10">
+                    HORARIO {weekLabel}
+                  </th>
+                </tr>
+                <tr>
+                  <th className="bg-white w-48 border border-gray-300"></th>
+                  <th className="bg-gray-100 w-32 border border-gray-300 py-1.5 px-1 text-center text-[10px] font-bold text-gray-500 uppercase tracking-tight">
+                    Disponibilidad<br/>
+                    <span className="text-[8px] font-normal lowercase tracking-normal">(Click repetido)</span><br/>
+                    <div className="flex justify-center gap-1 mt-1">
+                      <div className="w-2 h-2 rounded-full bg-red-500" title="Bloqueado Todo el Día"></div>
+                      <div className="w-2 h-2 rounded-full bg-orange-400" title="Solo Mañana"></div>
+                      <div className="w-2 h-2 rounded-full bg-indigo-500" title="Solo Tarde/Noche"></div>
+                    </div>
+                  </th>
+                  {DAYS.map(day => (
+                    <th key={`header-${day}`} className="bg-[#fef9c3] text-gray-800 py-1.5 px-2 text-center text-sm font-bold border border-gray-400 w-32 shadow-sm">
+                      {day}
+                    </th>
+                  ))}
+                </tr>
+                <tr>
+                  <th colSpan={DAYS.length + 2} className="bg-[#86efac] text-gray-900 py-1 text-center text-sm font-bold border border-gray-400 tracking-widest shadow-sm relative z-10">
+                    BAR
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {EMPLOYEES.map(emp => (
+                  <tr key={emp.id} className="hover:bg-gray-50 transition-colors group">
+                    <td className={`py-1.5 px-3 text-sm font-medium border border-gray-300 
+                      ${emp.type === 'vinculado' ? 'text-blue-900' : 
+                        emp.type === 'apoyo' ? 'text-green-700 bg-green-50' : 'text-gray-700'}`}>
+                      {emp.name} 
+                      <span className="text-[10px] ml-2 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400">
+                        {emp.type === 'vinculado' ? '(V)' : emp.type === 'apoyo' ? '(A)' : '(NV)'}
+                      </span>
+                    </td>
+
+                    <td className="border border-gray-300 p-1 relative bg-gray-50/50 align-middle">
+                      <div className="flex justify-center gap-[2px]">
+                        {DAYS.map(d => {
+                          const resState = restrictions[emp.id]?.[d];
+                          let btnClass = "bg-white border border-gray-300 text-gray-400 hover:bg-gray-200 hover:text-gray-600";
+                          let titleText = `${d}: Disponible todo el día`;
+
+                          if (resState === 'BLOCKED_ALL') {
+                            btnClass = "bg-red-500 text-white border-red-600 hover:bg-red-600 scale-105 shadow-sm";
+                            titleText = `${d}: No Disponible (Bloqueado)`;
+                          } else if (resState === 'ONLY_MORNING') {
+                            btnClass = "bg-orange-400 text-white border-orange-500 hover:bg-orange-500 scale-105 shadow-sm";
+                            titleText = `${d}: Solo puede trabajar en la Mañana (7a-4p)`;
+                          } else if (resState === 'ONLY_EVENING') {
+                            btnClass = "bg-indigo-500 text-white border-indigo-600 hover:bg-indigo-600 scale-105 shadow-sm";
+                            titleText = `${d}: Solo puede trabajar en Tarde/Noche (12p-9p)`;
+                          }
+
+                          return (
+                            <button
+                              key={`btn-${emp.id}-${d}`}
+                              onClick={() => toggleRestriction(emp.id, d)}
+                              title={titleText}
+                              className={`w-[20px] h-[20px] text-[9px] font-bold rounded flex items-center justify-center transition-all ${btnClass}`}
+                            >
+                              {DAY_ABBR[d]}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </td>
+                    
+                    {DAYS.map(day => (
+                      <td key={`${emp.id}-${day}`} className="border border-gray-300 p-0 relative h-8 bg-white">
+                        <select
+                          value={schedule[emp.id]?.[day] || ''}
+                          onChange={(e) => updateCell(emp.id, day, e.target.value)}
+                          className={`w-full h-full appearance-none bg-transparent text-center text-[11px] focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer transition-colors ${getCellColor(schedule[emp.id]?.[day])}`}
+                          style={{ textAlignLast: 'center' }}
+                        >
+                          <option value=""></option>
+                          <option value={SHIFTS.MORNING} className="text-gray-800">{SHIFTS.MORNING}</option>
+                          <option value={SHIFTS.EVENING} className="text-gray-800">{SHIFTS.EVENING}</option>
+                          <option value={SHIFTS.OFF} className="text-red-600 font-bold">{SHIFTS.OFF}</option>
+                        </select>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+                
+                <tr className="bg-gray-100 border-t-2 border-gray-400">
+                  <td colSpan={2} className="py-2 px-3 text-xs font-bold text-gray-600 text-right border border-gray-300">
+                    Cobertura Mañana (7a-4p):
+                  </td>
+                  {DAYS.map(day => (
+                    <td key={`tot-m-${day}`} className="py-2 text-center text-xs font-bold text-blue-800 border border-gray-300">
+                      {getDailyTotals(day).morning}
+                    </td>
+                  ))}
+                </tr>
+                <tr className="bg-gray-100">
+                  <td colSpan={2} className="py-2 px-3 text-xs font-bold text-gray-600 text-right border border-gray-300">
+                    Cobertura Tarde/Noche (12p-9p):
+                  </td>
+                  {DAYS.map(day => (
+                    <td key={`tot-e-${day}`} className="py-2 text-center text-xs font-bold text-blue-800 border border-gray-300">
+                      {getDailyTotals(day).evening}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}

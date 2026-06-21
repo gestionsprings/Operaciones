@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mi Horario - Portal Empleados</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "react/jsx-runtime": "https://esm.sh/react@18.2.0/jsx-runtime"
+      }
+    }
+    </script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        body { -webkit-tap-highlight-color: transparent; }
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        /* Smooth scrolling para la tabla general */
+        .scrolling-touch { -webkit-overflow-scrolling: touch; }
+        .hide-scrollbar::-webkit-scrollbar { height: 6px; }
+        .hide-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        .hide-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    </style>
+</head>
+<body class="bg-gray-100 antialiased text-gray-800 selection:bg-blue-200">
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState } from 'react';
+        import { createRoot } from 'react-dom/client';
+
+        const EMPLOYEES = [
+          { id: 1, name: 'ANDRES ARROYAVE' },
+          { id: 2, name: 'JHONAL' },
+          { id: 3, name: 'JUAN DAVID YEPEZ' },
+          { id: 4, name: 'MARIA PAULA' },
+          { id: 5, name: 'DUBAN' },
+          { id: 6, name: 'CAMILO' },
+          { id: 7, name: 'LUIS' },
+          { id: 8, name: 'ANA SOFIA' },
+          { id: 9, name: 'ANA MARIA' },
+          { id: 10, name: 'VALERIA RODAS' },
+          { id: 11, name: 'APOYO LIMPIEZA JUGOS' }
+        ];
+
+        const DAYS = ['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO', 'DOMINGO'];
+        const DAY_ABBR = { 'LUNES': 'L', 'MARTES': 'M', 'MIERCOLES': 'X', 'JUEVES': 'J', 'VIERNES': 'V', 'SABADO': 'S', 'DOMINGO': 'D' };
+        
+        // DATOS DE EJEMPLO: 
+        const WEEK_LABEL = "22 - 28 JUNIO";
+        const SCHEDULE_DATA = {
+            1: { LUNES: 'LIBRE', MARTES: '7:00 a 4:00pm', MIERCOLES: '12:00 a 9:00pm', JUEVES: '7:00 a 4:00pm', VIERNES: '12:00 a 9:00pm', SABADO: '12:00 a 9:00pm', DOMINGO: '12:00 a 9:00pm' },
+            2: { LUNES: '7:00 a 4:00pm', MARTES: 'LIBRE', MIERCOLES: '7:00 a 4:00pm', JUEVES: '12:00 a 9:00pm', VIERNES: '7:00 a 4:00pm', SABADO: '7:00 a 4:00pm', DOMINGO: '12:00 a 9:00pm' },
+            3: { LUNES: '12:00 a 9:00pm', MARTES: '12:00 a 9:00pm', MIERCOLES: 'LIBRE', JUEVES: '12:00 a 9:00pm', VIERNES: '12:00 a 9:00pm', SABADO: '12:00 a 9:00pm', DOMINGO: 'LIBRE' },
+            4: { LUNES: 'LIBRE', MARTES: 'LIBRE', MIERCOLES: 'LIBRE', JUEVES: 'LIBRE', VIERNES: 'LIBRE', SABADO: '12:00 a 9:00pm', DOMINGO: '7:00 a 4:00pm' },
+            5: { LUNES: 'LIBRE', MARTES: '7:00 a 4:00pm', MIERCOLES: 'LIBRE', JUEVES: '12:00 a 9:00pm', VIERNES: 'LIBRE', SABADO: '12:00 a 9:00pm', DOMINGO: 'LIBRE' },
+            6: { LUNES: '12:00 a 9:00pm', MARTES: '7:00 a 4:00pm', MIERCOLES: '12:00 a 9:00pm', JUEVES: '7:00 a 4:00pm', VIERNES: 'LIBRE', SABADO: '12:00 a 9:00pm', DOMINGO: '7:00 a 4:00pm' },
+            7: { LUNES: 'LIBRE', MARTES: 'LIBRE', MIERCOLES: 'LIBRE', JUEVES: 'LIBRE', VIERNES: 'LIBRE', SABADO: 'LIBRE', DOMINGO: '12:00 a 9:00pm' },
+            8: { LUNES: '12:00 a 9:00pm', MARTES: '12:00 a 9:00pm', MIERCOLES: '12:00 a 9:00pm', JUEVES: '7:00 a 4:00pm', VIERNES: 'LIBRE', SABADO: 'LIBRE', DOMINGO: 'LIBRE' },
+            9: { LUNES: 'LIBRE', MARTES: 'LIBRE', MIERCOLES: 'LIBRE', JUEVES: 'LIBRE', VIERNES: 'LIBRE', SABADO: '12:00 a 9:00pm', DOMINGO: '7:00 a 4:00pm' },
+            10: { LUNES: 'LIBRE', MARTES: 'LIBRE', MIERCOLES: '12:00 a 9:00pm', JUEVES: '12:00 a 9:00pm', VIERNES: '7:00 a 4:00pm', SABADO: 'LIBRE', DOMINGO: 'LIBRE' },
+            11: { LUNES: '7:00 a 4:00pm', MARTES: '7:00 a 4:00pm', MIERCOLES: '7:00 a 4:00pm', JUEVES: '7:00 a 4:00pm', VIERNES: '7:00 a 4:00pm', SABADO: '7:00 a 4:00pm', DOMINGO: '7:00 a 4:00pm' }
+        };
+
+        function EmployeePortal() {
+            const [selectedEmpId, setSelectedEmpId] = useState('');
+            const [activeTab, setActiveTab] = useState('individual'); // 'individual' o 'general'
+
+            const getShiftStyle = (shift) => {
+                if (shift === '7:00 a 4:00pm') return { bg: 'bg-orange-100', text: 'text-orange-800', border: 'border-orange-200', icon: '☀️' };
+                if (shift === '12:00 a 9:00pm') return { bg: 'bg-indigo-100', text: 'text-indigo-800', border: 'border-indigo-200', icon: '🌙' };
+                if (shift === 'LIBRE') return { bg: 'bg-red-50', text: 'text-red-600', border: 'border-red-200', icon: '🛌' };
+                return { bg: 'bg-gray-100', text: 'text-gray-400', border: 'border-gray-200', icon: '❓' };
+            };
+
+            const getTableColor = (shift) => {
+                if (shift === '7:00 a 4:00pm') return 'text-orange-700 font-medium';
+                if (shift === '12:00 a 9:00pm') return 'text-indigo-700 font-medium';
+                if (shift === 'LIBRE') return 'text-red-500 font-bold';
+                return 'text-gray-300';
+            };
+
+            const selectedEmployee = EMPLOYEES.find(e => e.id === parseInt(selectedEmpId));
+            const mySchedule = SCHEDULE_DATA[selectedEmpId];
+
+            return (
+                <div className="min-h-screen bg-gray-100 flex flex-col font-sans">
+                    {/* Header PWA-like */}
+                    <header className="bg-gray-900 text-white p-4 shadow-md sticky top-0 z-50">
+                        <div className="max-w-4xl mx-auto flex items-center justify-between">
+                            <h1 className="text-xl font-bold tracking-wide">🍸 Mi Horario</h1>
+                            {selectedEmpId && (
+                                <button 
+                                    onClick={() => { setSelectedEmpId(''); setActiveTab('individual'); }}
+                                    className="text-xs bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded-md border border-gray-700 transition-colors flex items-center gap-1"
+                                >
+                                    <span>👤</span> Cambiar
+                                </button>
+                            )}
+                        </div>
+                    </header>
+
+                    <main className="flex-1 w-full mx-auto p-4 flex flex-col items-center">
+                        
+                        {/* PANTALLA 1: Seleccionar Empleado */}
+                        {!selectedEmpId && (
+                            <div className="w-full max-w-md bg-white rounded-2xl shadow-lg border border-gray-200 p-6 mt-4 fade-in">
+                                <div className="text-center mb-6">
+                                    <div className="text-4xl mb-3">👋</div>
+                                    <h2 className="text-2xl font-bold text-gray-800">¡Hola!</h2>
+                                    <p className="text-gray-500 mt-1">Selecciona tu nombre para ingresar al portal.</p>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <label className="block text-sm font-bold text-gray-700 uppercase tracking-wide">Mi Nombre es:</label>
+                                    <div className="relative">
+                                        <select 
+                                            className="w-full bg-gray-50 border-2 border-gray-300 text-gray-900 text-lg rounded-xl focus:ring-blue-500 focus:border-blue-500 block p-4 appearance-none font-medium shadow-sm cursor-pointer"
+                                            value={selectedEmpId}
+                                            onChange={(e) => setSelectedEmpId(e.target.value)}
+                                        >
+                                            <option value="" disabled>Toca para buscar...</option>
+                                            {EMPLOYEES.map(emp => (
+                                                <option key={emp.id} value={emp.id}>{emp.name}</option>
+                                            ))}
+                                        </select>
+                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-500">
+                                            <svg className="fill-current h-6 w-6" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* PANTALLA 2: Portal del Empleado (Tabs) */}
+                        {selectedEmpId && mySchedule && (
+                            <div className="w-full max-w-4xl fade-in flex flex-col">
+                                
+                                {/* Info Superior */}
+                                <div className="text-center mb-6 px-2">
+                                    <h2 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight">{selectedEmployee.name}</h2>
+                                    <p className="text-blue-600 font-bold text-xs md:text-sm mt-1 uppercase tracking-widest bg-blue-100 inline-block px-3 py-1 rounded-full shadow-sm">
+                                        Semana: {WEEK_LABEL}
+                                    </p>
+                                </div>
+
+                                {/* Navegación de Pestañas */}
+                                <div className="flex bg-gray-200 rounded-lg p-1 mb-6 shadow-inner mx-auto w-full max-w-md">
+                                    <button 
+                                        onClick={() => setActiveTab('individual')}
+                                        className={`flex-1 py-2 px-4 rounded-md text-sm font-bold transition-all ${activeTab === 'individual' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                    >
+                                        Mi Horario
+                                    </button>
+                                    <button 
+                                        onClick={() => setActiveTab('general')}
+                                        className={`flex-1 py-2 px-4 rounded-md text-sm font-bold transition-all ${activeTab === 'general' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                    >
+                                        Equipo General
+                                    </button>
+                                </div>
+
+                                {/* CONTENIDO PESTAÑA: INDIVIDUAL */}
+                                {activeTab === 'individual' && (
+                                    <div className="space-y-3 w-full max-w-md mx-auto fade-in pb-8">
+                                        {DAYS.map(day => {
+                                            const shift = mySchedule[day];
+                                            const style = getShiftStyle(shift);
+                                            
+                                            return (
+                                                <div key={day} className={`flex items-center p-3 md:p-4 rounded-xl border-2 shadow-sm transition-all ${style.bg} ${style.border}`}>
+                                                    <div className="flex-shrink-0 w-10 h-10 md:w-12 md:h-12 bg-white rounded-full flex items-center justify-center text-xl md:text-2xl shadow-sm border border-gray-100">
+                                                        {style.icon}
+                                                    </div>
+                                                    <div className="ml-4 flex-1">
+                                                        <p className="text-[10px] md:text-xs font-bold text-gray-500 uppercase tracking-widest mb-0.5">{day}</p>
+                                                        <p className={`text-base md:text-lg font-black ${style.text}`}>
+                                                            {shift || 'No Asignado'}
+                                                        </p>
+                                                    </div>
+                                                    {shift !== 'LIBRE' && shift !== '' && (
+                                                        <div className="text-gray-400 opacity-50">
+                                                            <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+
+                                {/* CONTENIDO PESTAÑA: GENERAL */}
+                                {activeTab === 'general' && (
+                                    <div className="w-full bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden fade-in mb-8">
+                                        <div className="bg-amber-100 p-3 border-b border-amber-200">
+                                            <h3 className="text-sm font-bold text-gray-800 text-center uppercase tracking-wider">Horario de Todo el Equipo</h3>
+                                        </div>
+                                        
+                                        <div className="overflow-x-auto hide-scrollbar scrolling-touch">
+                                            <table className="w-full border-collapse min-w-[700px]">
+                                                <thead>
+                                                    <tr>
+                                                        <th className="bg-gray-50 border-b border-r border-gray-200 sticky left-0 z-20 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.05)] px-3 py-2 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
+                                                            Personal
+                                                        </th>
+                                                        {DAYS.map(day => (
+                                                            <th key={`head-${day}`} className="bg-gray-50 border-b border-gray-200 py-2 px-2 text-center text-[11px] md:text-xs font-bold text-gray-700 w-24">
+                                                                {DAY_ABBR[day]} - {day.substring(0,3)}
+                                                            </th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-100">
+                                                    {EMPLOYEES.map(emp => (
+                                                        <tr key={`gen-${emp.id}`} className={`hover:bg-blue-50 transition-colors ${emp.id === parseInt(selectedEmpId) ? 'bg-blue-50/50' : 'bg-white'}`}>
+                                                            {/* Columna Nombres Sticky */}
+                                                            <td className={`py-2.5 px-3 text-[11px] md:text-xs font-bold border-r border-gray-200 sticky left-0 z-10 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.05)]
+                                                                ${emp.id === parseInt(selectedEmpId) ? 'bg-blue-50/90 text-blue-700 border-l-4 border-l-blue-500' : 'bg-white text-gray-700 border-l-4 border-l-transparent'}`}>
+                                                                {emp.name}
+                                                                {emp.id === parseInt(selectedEmpId) && <span className="ml-1 text-[10px]">👈</span>}
+                                                            </td>
+                                                            
+                                                            {/* Celdas de Turnos */}
+                                                            {DAYS.map(day => {
+                                                                const sData = SCHEDULE_DATA[emp.id]?.[day] || '';
+                                                                let shortShift = sData;
+                                                                if(sData === '7:00 a 4:00pm') shortShift = '7a - 4p';
+                                                                if(sData === '12:00 a 9:00pm') shortShift = '12p - 9p';
+
+                                                                return (
+                                                                    <td key={`cell-${emp.id}-${day}`} className="py-2 px-1 text-center border-r border-gray-100 last:border-r-0">
+                                                                        <span className={`text-[10px] md:text-[11px] ${getTableColor(sData)}`}>
+                                                                            {shortShift}
+                                                                        </span>
+                                                                    </td>
+                                                                );
+                                                            })}
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        }
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<EmployeePortal />);
+    </script>
+</body>
+</html>

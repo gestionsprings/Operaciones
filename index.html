@@ -89,6 +89,17 @@
           const [isGenerating, setIsGenerating] = useState(false);
           const [useApoyo, setUseApoyo] = useState(false); 
           
+          // Vista por defecto ahora es 'portal'
+          const [currentView, setCurrentView] = useState('portal');
+          const [portalUserId, setPortalUserId] = useState(0);
+          
+          // Estados para el login de admin
+          const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+          const [showAuthModal, setShowAuthModal] = useState(false);
+          const [passwordInput, setPasswordInput] = useState('');
+          const [authError, setAuthError] = useState('');
+          const ADMIN_PASSWORD = '1234'; // Código de acceso
+          
           const [occupancy, setOccupancy] = useState(INITIAL_OCCUPANCY);
           const [prevSundayHospedaje, setPrevSundayHospedaje] = useState(45); 
           
@@ -341,9 +352,80 @@
             return 'bg-green-100 text-green-800 border-green-200';
           };
 
+          const handleAdminClick = () => {
+            if (isAdminAuthenticated) {
+              setCurrentView('admin');
+            } else {
+              setShowAuthModal(true);
+              setAuthError('');
+              setPasswordInput('');
+            }
+          };
+
+          const handleAuthSubmit = (e) => {
+            e.preventDefault();
+            if (passwordInput === ADMIN_PASSWORD) {
+              setIsAdminAuthenticated(true);
+              setShowAuthModal(false);
+              setCurrentView('admin');
+            } else {
+              setAuthError('Código incorrecto');
+            }
+          };
+
           return (
-            <div className="min-h-screen bg-gray-100 p-2 sm:p-4 md:p-8 font-sans pb-20">
-              <div className="max-w-7xl mx-auto space-y-4 md:space-y-6">
+            <div className="min-h-screen bg-gray-100 font-sans pb-20">
+              
+              {/* Modal de Autenticación */}
+              {showAuthModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+                  <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm transform transition-all">
+                    <div className="text-center mb-6">
+                      <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3 text-2xl">
+                        🔒
+                      </div>
+                      <h3 className="text-xl font-black text-gray-800">Acceso Restringido</h3>
+                      <p className="text-xs text-gray-500 mt-1">Ingresa el código para gestionar horarios</p>
+                    </div>
+                    <form onSubmit={handleAuthSubmit}>
+                      <input
+                        type="password"
+                        value={passwordInput}
+                        onChange={(e) => setPasswordInput(e.target.value)}
+                        placeholder="Código de acceso"
+                        className="w-full p-3 border-2 border-gray-200 rounded-xl mb-1 focus:outline-none focus:border-blue-500 focus:ring-0 text-center text-lg font-bold tracking-widest transition-colors"
+                        autoFocus
+                      />
+                      <div className="h-5">
+                        {authError && <p className="text-red-500 text-xs font-bold text-center animate-pulse">{authError}</p>}
+                      </div>
+                      <div className="flex gap-3 mt-2">
+                        <button type="button" onClick={() => setShowAuthModal(false)} className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-200 transition-colors">Cancelar</button>
+                        <button type="submit" className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30">Ingresar</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {/* Navegación Principal */}
+              <nav className="bg-gray-800 text-white shadow-md sticky top-0 z-50">
+                <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+                  <div className="font-black text-lg md:text-xl tracking-tight flex items-center gap-2">
+                    <span className="text-blue-400">🍹 Bar</span> Planner
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={handleAdminClick} className={`flex items-center gap-1 px-3 py-1.5 md:px-5 md:py-2 rounded-md text-xs md:text-sm font-bold transition-colors ${currentView === 'admin' ? 'bg-blue-600 text-white shadow-inner' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                      {!isAdminAuthenticated && <span>🔒</span>} Admin
+                    </button>
+                    <button onClick={() => setCurrentView('portal')} className={`px-3 py-1.5 md:px-5 md:py-2 rounded-md text-xs md:text-sm font-bold transition-colors ${currentView === 'portal' ? 'bg-green-600 text-white shadow-inner' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>Portal Empleados</button>
+                  </div>
+                </div>
+              </nav>
+
+              {/* VISTA DE ADMINISTRADOR */}
+              {currentView === 'admin' && (
+                <div className="p-2 sm:p-4 md:p-8 max-w-7xl mx-auto space-y-4 md:space-y-6">
                 
                 {/* Panel de Control Principal */}
                 <div className="bg-white p-4 md:p-6 rounded-xl shadow-md border border-gray-200">
@@ -629,6 +711,103 @@
                 </div>
 
               </div>
+              )}
+
+              {/* VISTA PORTAL EMPLEADOS */}
+              {currentView === 'portal' && (
+                <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6">
+                  
+                  {/* Selector de Empleado */}
+                  <div className="bg-white p-5 md:p-8 rounded-xl shadow-md border border-gray-200">
+                    <h2 className="text-2xl font-black text-gray-800 mb-2">Portal del Empleado</h2>
+                    <p className="text-sm text-gray-500 mb-6">Consulta tu horario personal y el cronograma general.</p>
+                    
+                    <div className="max-w-md">
+                      <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">Selecciona tu nombre</label>
+                      <select 
+                        value={portalUserId} 
+                        onChange={e => setPortalUserId(Number(e.target.value))} 
+                        className="w-full p-3 border-2 border-blue-100 focus:border-blue-500 rounded-lg font-bold text-gray-700 outline-none bg-blue-50/30 transition-colors"
+                      >
+                        <option value={0}>-- Seleccionar --</option>
+                        {EMPLOYEES.map(emp => (
+                          <option key={emp.id} value={emp.id}>{emp.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {portalUserId > 0 && (
+                    <div className="space-y-6 transition-all duration-300">
+                      
+                      {/* Mi Horario Personal */}
+                      <div className="bg-white p-5 md:p-8 rounded-xl shadow-lg border-t-4 border-t-blue-500 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-4 opacity-10">
+                           <span className="text-6xl">📅</span>
+                        </div>
+                        <h3 className="text-xl font-bold mb-4 text-blue-900">Mi Horario: <span className="text-gray-600 font-medium">{weekLabel}</span></h3>
+                        
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+                          {DAYS.map(day => {
+                            const myShift = schedule[portalUserId]?.[day] || SHIFTS.EMPTY;
+                            const isOff = myShift === SHIFTS.OFF;
+                            const isPetro = myShift.includes('PETRO');
+                            const hasShift = myShift !== SHIFTS.EMPTY && !isOff;
+                            
+                            return (
+                              <div key={`my-${day}`} className={`p-4 rounded-xl border flex flex-col justify-center items-center text-center shadow-sm transition-all hover:shadow-md
+                                ${isOff ? 'bg-red-50 border-red-200' : isPetro ? 'bg-purple-50 border-purple-200' : hasShift ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
+                                <div className="text-[11px] font-black text-gray-500 uppercase tracking-widest mb-2">{day}</div>
+                                <div className={`font-black text-sm md:text-base leading-tight ${getCellColor(myShift)}`}>
+                                  {myShift || 'Sin asignar'}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Horario General (Solo Lectura) */}
+                      <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+                        <div className="bg-gray-800 p-4 border-b border-gray-700">
+                          <h3 className="text-lg font-bold text-white">Horario General del Staff</h3>
+                        </div>
+                        <div className="overflow-x-auto hide-scrollbar scrolling-touch">
+                          <table className="w-full border-collapse min-w-[700px] text-sm">
+                            <thead>
+                              <tr className="bg-gray-100 border-b border-gray-300">
+                                <th className="py-3 px-4 text-left font-bold text-gray-600 sticky left-0 bg-gray-100 z-10 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]">Compañero</th>
+                                {DAYS.map(day => (
+                                  <th key={`gen-h-${day}`} className="py-3 px-2 text-center font-bold text-gray-600 w-24">
+                                    {DAY_ABBR[day]}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {EMPLOYEES.map(emp => (
+                                <tr key={`gen-r-${emp.id}`} className={`hover:bg-blue-50 transition-colors ${emp.id === portalUserId ? 'bg-blue-50/50' : 'bg-white'}`}>
+                                  <td className={`py-3 px-4 font-bold sticky left-0 z-10 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.05)]
+                                    ${emp.id === portalUserId ? 'text-blue-700 bg-blue-50/50' : 'text-gray-700 bg-white'}`}>
+                                    {emp.name} {emp.id === portalUserId && <span className="ml-1 text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded-full">TÚ</span>}
+                                  </td>
+                                  {DAYS.map(day => (
+                                    <td key={`gen-d-${emp.id}-${day}`} className={`py-3 px-2 text-center text-[11px] md:text-xs font-bold ${getCellColor(schedule[emp.id]?.[day])}`}>
+                                      {schedule[emp.id]?.[day] || '-'}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
           );
         }

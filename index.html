@@ -2,13 +2,11 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Programador Horarios Bar</title>
     
-    <!-- Cargando Tailwind CSS para los estilos -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Mapa de importaciones para resolver módulos de React correctamente -->
     <script type="importmap">
     {
       "imports": {
@@ -19,10 +17,30 @@
     }
     </script>
     
-    <!-- Cargando Babel para compilar JSX en el navegador -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        /* Mejoras adicionales para scrolling suave en móviles */
+        .scrolling-touch {
+            -webkit-overflow-scrolling: touch;
+        }
+        /* Ocultar scrollbar en tablas para diseño más limpio, pero permitir scroll */
+        .hide-scrollbar::-webkit-scrollbar {
+            height: 6px;
+        }
+        .hide-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+            border-radius: 4px;
+        }
+        .hide-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        .hide-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+    </style>
 </head>
-<body class="bg-gray-50">
+<body class="bg-gray-100 antialiased text-gray-800 selection:bg-blue-200">
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
@@ -279,7 +297,7 @@
 
           const getCellColor = (shift) => {
             if (shift === SHIFTS.OFF) return 'text-red-600 font-bold';
-            return 'text-gray-800';
+            return 'text-gray-800 font-medium';
           };
 
           const getDailyTotals = (day) => {
@@ -299,123 +317,129 @@
           };
 
           return (
-            <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans">
-              <div className="max-w-7xl mx-auto space-y-6">
+            <div className="min-h-screen bg-gray-100 p-2 sm:p-4 md:p-8 font-sans pb-20">
+              <div className="max-w-7xl mx-auto space-y-4 md:space-y-6">
                 
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                {/* Panel de Control Principal */}
+                <div className="bg-white p-4 md:p-6 rounded-xl shadow-md border border-gray-200">
+                  <div className="flex flex-col gap-4 mb-4 md:mb-6">
                     <div>
-                      <h1 className="text-2xl font-bold text-gray-800">Programador Inteligente de Horarios</h1>
-                      <p className="text-gray-600">Ingresa la ocupación y el sistema calculará personal y turnos según tus reglas.</p>
+                      <h1 className="text-xl md:text-2xl font-bold text-gray-800 leading-tight">Programador Bar</h1>
+                      <p className="text-xs md:text-sm text-gray-500 mt-1">Calcula turnos y personal inteligentemente.</p>
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={clearSchedule} className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-md font-medium transition-colors text-sm">
-                        Limpiar
-                      </button>
-                      <button onClick={generateSchedule} disabled={isGenerating} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md font-medium transition-colors flex items-center justify-center min-w-[180px] shadow-sm">
+                    
+                    {/* Botones de Acción (Ancho completo en móvil) */}
+                    <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                      <button onClick={generateSchedule} disabled={isGenerating} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white px-6 py-3 md:py-2 rounded-lg font-bold transition-colors flex items-center justify-center shadow-md text-sm md:text-base">
                         {isGenerating ? 'Calculando...' : 'Generar Horario'}
+                      </button>
+                      <button onClick={clearSchedule} className="w-full sm:w-auto bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-700 px-4 py-3 md:py-2 rounded-lg font-medium transition-colors border border-gray-200 text-sm md:text-base">
+                        Limpiar Todo
                       </button>
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-2">
+                  {/* Controles de Configuración */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 mb-2">
                     
-                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 flex flex-col gap-4">
+                    {/* Tarjeta de Semana y Apoyo */}
+                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 flex flex-col gap-3 shadow-inner">
                       <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Semana del Horario</label>
-                        <input type="text" value={weekLabel} onChange={(e) => setWeekLabel(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white" />
+                        <label className="block text-[11px] md:text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Semana</label>
+                        <input type="text" value={weekLabel} onChange={(e) => setWeekLabel(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm text-sm" />
                       </div>
                       <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Huéspedes del Domingo Anterior</label>
-                        <p className="text-[10px] text-gray-500 mb-1 leading-tight">Define el personal base para el Lunes en la Mañana.</p>
-                        <input type="number" min="0" value={prevSundayHospedaje} onChange={(e) => setPrevSundayHospedaje(parseInt(e.target.value)||0)} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white font-bold text-blue-900" />
+                        <label className="block text-[11px] md:text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Huéspedes Domingo Anterior</label>
+                        <input type="number" min="0" value={prevSundayHospedaje} onChange={(e) => setPrevSundayHospedaje(parseInt(e.target.value)||0)} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white font-bold text-blue-900 shadow-sm text-sm" />
                       </div>
-                      <label className="flex items-center cursor-pointer gap-2 bg-green-50 p-3 rounded-md border border-green-200 mt-auto hover:bg-green-100 transition-colors shadow-sm">
-                        <input type="checkbox" checked={useApoyo} onChange={(e) => setUseApoyo(e.target.checked)} className="w-5 h-5 text-green-600 rounded focus:ring-green-500 cursor-pointer" />
+                      <label className="flex items-center cursor-pointer gap-2 bg-green-50 p-3 rounded-md border border-green-200 mt-auto hover:bg-green-100 transition-colors shadow-sm active:bg-green-200">
+                        <input type="checkbox" checked={useApoyo} onChange={(e) => setUseApoyo(e.target.checked)} className="w-5 h-5 md:w-4 md:h-4 text-green-600 rounded focus:ring-green-500 cursor-pointer" />
                         <span className="text-sm font-bold text-green-800">Usar Apoyo Jugos (Mañanas)</span>
                       </label>
                     </div>
 
+                    {/* Tabla de Ocupación */}
                     <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
-                      <div className="bg-[#fcd34d] px-4 py-2 flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-gray-300 gap-2">
-                        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Datos de Ocupación</h3>
-                        <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-gray-800">
-                          <div className="flex items-center gap-1 bg-white/70 px-2 py-1 rounded shadow-sm">
-                            <span>Capacidad (100%):</span>
-                            <input type="number" min="1" value={capacity} onChange={e => setCapacity(parseInt(e.target.value)||1)} className="w-14 px-1 py-0.5 border border-gray-300 rounded text-center outline-none focus:ring-1 focus:ring-blue-500"/>
+                      {/* Cabecera de Ocupación con Variables Responsivas */}
+                      <div className="bg-gradient-to-r from-amber-100 to-amber-200 px-3 py-3 flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-amber-300 gap-3">
+                        <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wider">Datos de Ocupación</h3>
+                        <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-gray-800 w-full sm:w-auto">
+                          <div className="flex items-center gap-1 bg-white px-2 py-1.5 rounded shadow-sm flex-1 sm:flex-none justify-between border border-gray-200">
+                            <span>100%:</span>
+                            <input type="number" min="1" value={capacity} onChange={e => setCapacity(parseInt(e.target.value)||1)} className="w-12 px-1 py-0.5 border border-gray-200 rounded text-center outline-none focus:ring-2 focus:ring-blue-500 font-bold"/>
                           </div>
                           
-                          <div className="flex items-center gap-1 bg-blue-100 px-2 py-1 rounded border border-blue-200 shadow-sm">
-                            <span className="text-blue-900 font-bold">Pax / Trabajador:</span>
-                            <input type="number" min="1" value={paxPerWorker} onChange={e => setPaxPerWorker(parseInt(e.target.value)||1)} className="w-12 px-1 py-0.5 border border-blue-300 rounded text-center outline-none focus:ring-1 focus:ring-blue-500 bg-white font-bold"/>
+                          <div className="flex items-center gap-1 bg-blue-50 px-2 py-1.5 rounded border border-blue-200 shadow-sm flex-1 sm:flex-none justify-between">
+                            <span className="text-blue-900 font-bold">Pax/Stf:</span>
+                            <input type="number" min="1" value={paxPerWorker} onChange={e => setPaxPerWorker(parseInt(e.target.value)||1)} className="w-10 px-1 py-0.5 border border-blue-300 rounded text-center outline-none focus:ring-2 focus:ring-blue-500 bg-white font-bold"/>
                           </div>
 
-                          <div className="flex items-center gap-1 bg-white/70 px-2 py-1 rounded shadow-sm">
-                            <span>Media {`>=`}%</span>
-                            <input type="number" value={thresholds.media} onChange={e => setThresholds(p => ({...p, media: parseInt(e.target.value)||0}))} className="w-10 px-1 py-0.5 border border-gray-300 rounded text-center outline-none"/>
+                          <div className="hidden md:flex items-center gap-1 bg-white px-2 py-1.5 rounded shadow-sm border border-gray-200">
+                            <span>M {`>=`}%</span>
+                            <input type="number" value={thresholds.media} onChange={e => setThresholds(p => ({...p, media: parseInt(e.target.value)||0}))} className="w-10 px-1 py-0.5 border border-gray-200 rounded text-center outline-none"/>
                           </div>
-                          <div className="flex items-center gap-1 bg-white/70 px-2 py-1 rounded shadow-sm">
-                            <span>Alta {`>=`}%</span>
-                            <input type="number" value={thresholds.alta} onChange={e => setThresholds(p => ({...p, alta: parseInt(e.target.value)||0}))} className="w-10 px-1 py-0.5 border border-gray-300 rounded text-center outline-none"/>
+                          <div className="hidden md:flex items-center gap-1 bg-white px-2 py-1.5 rounded shadow-sm border border-gray-200">
+                            <span>A {`>=`}%</span>
+                            <input type="number" value={thresholds.alta} onChange={e => setThresholds(p => ({...p, alta: parseInt(e.target.value)||0}))} className="w-10 px-1 py-0.5 border border-gray-200 rounded text-center outline-none"/>
                           </div>
                         </div>
                       </div>
                       
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead className="bg-orange-50 border-b border-gray-200">
+                      {/* Contenedor scrolleable de la tabla ocupación */}
+                      <div className="overflow-x-auto hide-scrollbar scrolling-touch">
+                        <table className="w-full text-sm min-w-[600px]">
+                          <thead className="bg-gray-50 border-b border-gray-200">
                             <tr>
-                              <th className="px-3 py-2 text-left font-semibold text-gray-700">Día</th>
-                              <th className="px-3 py-2 text-center font-semibold text-gray-700 border-x border-gray-200">Hospedaje</th>
-                              <th className="px-3 py-2 text-center font-semibold text-gray-700 border-r border-gray-200">+ Día Sol</th>
-                              <th className="px-3 py-2 text-center text-xs font-bold text-blue-900 bg-blue-50/50">Cálculo Mañana</th>
-                              <th className="px-3 py-2 text-center text-xs font-bold text-blue-900 bg-blue-50/50 border-l border-white">Cálculo Tarde</th>
-                              <th className="px-3 py-2 text-center text-xs font-bold text-blue-900 bg-blue-50/50 border-l border-white">Cálculo Noche</th>
+                              {/* STICKY COLUMN */}
+                              <th className="px-3 py-2 text-left font-semibold text-gray-600 sticky left-0 bg-gray-50 z-10 border-r border-gray-200 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]">Día</th>
+                              <th className="px-2 py-2 text-center font-semibold text-gray-600">Hosp.</th>
+                              <th className="px-2 py-2 text-center font-semibold text-gray-600 border-r border-gray-200">+ Sol</th>
+                              <th className="px-2 py-2 text-center text-[10px] md:text-xs font-bold text-blue-800 bg-blue-50/50">Mañana</th>
+                              <th className="px-2 py-2 text-center text-[10px] md:text-xs font-bold text-blue-800 bg-blue-50/50 border-l border-white">Tarde</th>
+                              <th className="px-2 py-2 text-center text-[10px] md:text-xs font-bold text-blue-800 bg-blue-50/50 border-l border-white">Noche</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
                             {DAYS.map(day => {
                               const calc = calculatedDemand[day];
                               return (
-                                <tr key={`occ-${day}`} className="hover:bg-gray-50">
-                                  <td className="px-3 py-1.5 font-medium text-gray-700">{day}</td>
-                                  <td className="px-3 py-1.5 text-center border-x border-gray-100">
-                                    <input type="number" min="0" value={occupancy[day].hospedaje} onChange={(e) => handleOccupancyChange(day, 'hospedaje', e.target.value)} className="w-16 px-2 py-1 text-center border border-gray-300 rounded focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none shadow-inner" />
+                                <tr key={`occ-${day}`} className="hover:bg-gray-50 bg-white">
+                                  {/* STICKY COLUMN */}
+                                  <td className="px-3 py-2 font-bold text-gray-700 text-xs md:text-sm sticky left-0 bg-white z-10 border-r border-gray-200 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.05)]">{DAY_ABBR[day]} - {day.substring(0,3)}</td>
+                                  
+                                  <td className="px-2 py-1.5 text-center">
+                                    <input type="number" min="0" value={occupancy[day].hospedaje} onChange={(e) => handleOccupancyChange(day, 'hospedaje', e.target.value)} className="w-14 md:w-16 px-1 py-1 text-center border border-gray-300 rounded focus:border-blue-500 focus:ring-2 focus:ring-blue-500 outline-none shadow-inner bg-gray-50 text-sm md:text-base font-medium" />
                                   </td>
-                                  <td className="px-3 py-1.5 text-center border-r border-gray-100">
-                                    <input type="number" min="0" value={occupancy[day].diaSol} onChange={(e) => handleOccupancyChange(day, 'diaSol', e.target.value)} className="w-16 px-2 py-1 text-center border border-gray-300 rounded focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none shadow-inner" />
+                                  <td className="px-2 py-1.5 text-center border-r border-gray-100">
+                                    <input type="number" min="0" value={occupancy[day].diaSol} onChange={(e) => handleOccupancyChange(day, 'diaSol', e.target.value)} className="w-14 md:w-16 px-1 py-1 text-center border border-gray-300 rounded focus:border-blue-500 focus:ring-2 focus:ring-blue-500 outline-none shadow-inner bg-gray-50 text-sm md:text-base font-medium" />
                                   </td>
                                   {calc && (
                                     <React.Fragment>
-                                      <td className="px-2 py-1.5 text-center bg-blue-50/20">
+                                      <td className="px-1 py-1 text-center bg-blue-50/30">
                                         <div className="flex flex-col items-center justify-center">
-                                          <span className="text-[10px] text-gray-500 font-medium leading-none mb-1 whitespace-nowrap">{calc.mananaCount} pax ({calc.mananaPercentage}%)</span>
+                                          <span className="text-[9px] md:text-[10px] text-gray-500 font-medium leading-tight mb-0.5 whitespace-nowrap">{calc.mananaCount} ({calc.mananaPercentage}%)</span>
                                           <div className="flex items-center gap-1">
-                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${demandBadgeColor(calc.manana)}`}>{calc.manana}</span>
-                                            <span className="text-[11px] bg-blue-600 text-white font-bold px-1.5 py-0.5 rounded shadow-sm" title={`Requeridos: ${calc.reqM}`}>{calc.reqM} 👤</span>
+                                            <span className={`text-[9px] md:text-[10px] font-bold px-1.5 py-0.5 rounded border ${demandBadgeColor(calc.manana)}`}>{calc.manana.substring(0,1)}</span>
+                                            <span className="text-[10px] md:text-[11px] bg-blue-600 text-white font-bold px-1.5 py-0.5 rounded shadow-sm">{calc.reqM}👤</span>
                                           </div>
-                                          {calc.isBuffet && (
-                                            <span className="mt-1 text-[9px] bg-purple-100 text-purple-800 font-bold px-1.5 py-0.5 rounded border border-purple-300 shadow-sm">
-                                              🍲 BUFFET
-                                            </span>
-                                          )}
+                                          {calc.isBuffet && <span className="mt-0.5 text-[8px] bg-purple-100 text-purple-800 font-bold px-1 rounded border border-purple-300">🍲BUF</span>}
                                         </div>
                                       </td>
-                                      <td className="px-2 py-1.5 text-center bg-blue-50/20 border-l border-gray-100">
+                                      <td className="px-1 py-1 text-center bg-blue-50/30 border-l border-gray-100">
                                         <div className="flex flex-col items-center justify-center">
-                                          <span className="text-[10px] text-gray-500 font-medium leading-none mb-1 whitespace-nowrap">{calc.tardeCount} pax ({calc.tardePercentage}%)</span>
+                                          <span className="text-[9px] md:text-[10px] text-gray-500 font-medium leading-tight mb-0.5 whitespace-nowrap">{calc.tardeCount} ({calc.tardePercentage}%)</span>
                                           <div className="flex items-center gap-1">
-                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${demandBadgeColor(calc.tarde)}`}>{calc.tarde}</span>
-                                            <span className="text-[11px] bg-blue-600 text-white font-bold px-1.5 py-0.5 rounded shadow-sm" title={`Requeridos: ${calc.reqT}`}>{calc.reqT} 👤</span>
+                                            <span className={`text-[9px] md:text-[10px] font-bold px-1.5 py-0.5 rounded border ${demandBadgeColor(calc.tarde)}`}>{calc.tarde.substring(0,1)}</span>
+                                            <span className="text-[10px] md:text-[11px] bg-blue-600 text-white font-bold px-1.5 py-0.5 rounded shadow-sm">{calc.reqT}👤</span>
                                           </div>
                                         </div>
                                       </td>
-                                      <td className="px-2 py-1.5 text-center bg-blue-50/20 border-l border-gray-100">
+                                      <td className="px-1 py-1 text-center bg-blue-50/30 border-l border-gray-100">
                                         <div className="flex flex-col items-center justify-center">
-                                          <span className="text-[10px] text-gray-500 font-medium leading-none mb-1 whitespace-nowrap">{calc.nocheCount} pax ({calc.nochePercentage}%)</span>
+                                          <span className="text-[9px] md:text-[10px] text-gray-500 font-medium leading-tight mb-0.5 whitespace-nowrap">{calc.nocheCount} ({calc.nochePercentage}%)</span>
                                           <div className="flex items-center gap-1">
-                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${demandBadgeColor(calc.noche)}`}>{calc.noche}</span>
-                                            <span className="text-[11px] bg-blue-600 text-white font-bold px-1.5 py-0.5 rounded shadow-sm" title={`Requeridos: ${calc.reqN}`}>{calc.reqN} 👤</span>
+                                            <span className={`text-[9px] md:text-[10px] font-bold px-1.5 py-0.5 rounded border ${demandBadgeColor(calc.noche)}`}>{calc.noche.substring(0,1)}</span>
+                                            <span className="text-[10px] md:text-[11px] bg-blue-600 text-white font-bold px-1.5 py-0.5 rounded shadow-sm">{calc.reqN}👤</span>
                                           </div>
                                         </div>
                                       </td>
@@ -432,66 +456,73 @@
                   </div>
                 </div>
 
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse min-w-[1100px]">
+                {/* Tabla Principal del Horario */}
+                <div className="bg-white rounded-xl shadow-lg border border-gray-300 overflow-hidden relative">
+                  <div className="overflow-x-auto hide-scrollbar scrolling-touch">
+                    <table className="w-full border-collapse min-w-[900px]">
                       <thead>
                         <tr>
-                          <th colSpan={DAYS.length + 2} className="bg-white text-center py-2 text-lg font-bold border border-gray-300 shadow-sm relative z-10">
-                            HORARIO {weekLabel}
+                          {/* STICKY CORNER */}
+                          <th className="bg-white border border-gray-300 sticky left-0 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)]"></th>
+                          
+                          <th colSpan={DAYS.length + 1} className="bg-gray-800 text-white text-center py-2.5 text-sm md:text-lg font-bold border border-gray-700 tracking-wide uppercase">
+                            Horario: {weekLabel}
                           </th>
                         </tr>
                         <tr>
-                          <th className="bg-white w-48 border border-gray-300"></th>
-                          <th className="bg-gray-100 w-32 border border-gray-300 py-1.5 px-1 text-center text-[10px] font-bold text-gray-500 uppercase tracking-tight">
-                            Disponibilidad<br/>
-                            <span className="text-[8px] font-normal lowercase tracking-normal">(Click repetido)</span><br/>
-                            <div className="flex justify-center gap-1 mt-1">
-                              <div className="w-2 h-2 rounded-full bg-red-500" title="Bloqueado Todo el Día"></div>
-                              <div className="w-2 h-2 rounded-full bg-orange-400" title="Solo Mañana"></div>
-                              <div className="w-2 h-2 rounded-full bg-indigo-500" title="Solo Tarde/Noche"></div>
+                          {/* STICKY COLUMN HEADER */}
+                          <th className="bg-gray-100 border border-gray-300 sticky left-0 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)] px-2 py-2">
+                             <div className="text-left text-[10px] md:text-xs font-bold text-gray-600 uppercase tracking-wider">Staff Bar</div>
+                          </th>
+                          
+                          <th className="bg-gray-50 w-28 md:w-36 border border-gray-300 py-1.5 px-1 text-center align-top">
+                            <div className="text-[9px] md:text-[10px] font-bold text-gray-500 uppercase tracking-tight mb-1">Disponibilidad<br/><span className="text-[8px] font-normal lowercase">(Click repetido)</span></div>
+                            <div className="flex justify-center gap-1 flex-wrap px-1">
+                              <div className="w-2.5 h-2.5 rounded-full bg-red-500" title="Bloqueado Todo"></div>
+                              <div className="w-2.5 h-2.5 rounded-full bg-orange-400" title="Solo Mañana"></div>
+                              <div className="w-2.5 h-2.5 rounded-full bg-indigo-500" title="Solo Tarde"></div>
                             </div>
                           </th>
+                          
                           {DAYS.map(day => (
-                            <th key={`header-${day}`} className="bg-[#fef9c3] text-gray-800 py-1.5 px-2 text-center text-sm font-bold border border-gray-400 w-32 shadow-sm">
-                              {day}
+                            <th key={`header-${day}`} className="bg-amber-100 text-gray-800 py-2 px-1 text-center text-xs md:text-sm font-bold border border-amber-200 w-24 md:w-32 shadow-sm">
+                              {day.substring(0,3).toUpperCase()}
                             </th>
                           ))}
                         </tr>
-                        <tr>
-                          <th colSpan={DAYS.length + 2} className="bg-[#86efac] text-gray-900 py-1 text-center text-sm font-bold border border-gray-400 tracking-widest shadow-sm relative z-10">
-                            BAR
-                          </th>
-                        </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="bg-white">
                         {EMPLOYEES.map(emp => (
-                          <tr key={emp.id} className="hover:bg-gray-50 transition-colors group">
-                            <td className={`py-1.5 px-3 text-sm font-medium border border-gray-300 
-                              ${emp.type === 'vinculado' ? 'text-blue-900' : 
-                                emp.type === 'apoyo' ? 'text-green-700 bg-green-50' : 'text-gray-700'}`}>
-                              {emp.name} 
-                              <span className="text-[10px] ml-2 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400">
-                                {emp.type === 'vinculado' ? '(V)' : emp.type === 'apoyo' ? '(A)' : '(NV)'}
-                              </span>
+                          <tr key={emp.id} className="hover:bg-blue-50 transition-colors group border-b border-gray-200">
+                            
+                            {/* STICKY COLUMN BODY (NOMBRES) */}
+                            <td className={`py-2 px-2 md:px-3 text-[11px] md:text-sm font-bold border-r border-gray-300 sticky left-0 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] bg-white
+                              ${emp.type === 'vinculado' ? 'text-blue-900 border-l-4 border-l-blue-500' : 
+                                emp.type === 'apoyo' ? 'text-green-700 bg-green-50 border-l-4 border-l-green-500' : 'text-gray-700 border-l-4 border-l-gray-300'}`}>
+                              <div className="flex flex-col">
+                                <span>{emp.name}</span>
+                                <span className="text-[8px] md:text-[9px] text-gray-400 font-medium mt-0.5">
+                                  {emp.type === 'vinculado' ? 'VINCULADO' : emp.type === 'apoyo' ? 'APOYO' : 'NO VINCULADO'}
+                                </span>
+                              </div>
                             </td>
 
-                            <td className="border border-gray-300 p-1 relative bg-gray-50/50 align-middle">
-                              <div className="flex justify-center gap-[2px]">
+                            <td className="border-r border-gray-200 p-1 md:p-2 relative bg-gray-50/30 align-middle">
+                              <div className="flex justify-center gap-1 md:gap-1.5 flex-wrap">
                                 {DAYS.map(d => {
                                   const resState = restrictions[emp.id]?.[d];
-                                  let btnClass = "bg-white border border-gray-300 text-gray-400 hover:bg-gray-200 hover:text-gray-600";
-                                  let titleText = `${d}: Disponible todo el día`;
+                                  let btnClass = "bg-white border border-gray-300 text-gray-400 hover:bg-gray-200";
+                                  let titleText = `${d}: Disponible`;
 
                                   if (resState === 'BLOCKED_ALL') {
-                                    btnClass = "bg-red-500 text-white border-red-600 hover:bg-red-600 scale-105 shadow-sm";
-                                    titleText = `${d}: No Disponible (Bloqueado)`;
+                                    btnClass = "bg-red-500 text-white border-red-600 shadow-sm transform scale-110";
+                                    titleText = `${d}: Bloqueado`;
                                   } else if (resState === 'ONLY_MORNING') {
-                                    btnClass = "bg-orange-400 text-white border-orange-500 hover:bg-orange-500 scale-105 shadow-sm";
-                                    titleText = `${d}: Solo puede trabajar en la Mañana (7a-4p)`;
+                                    btnClass = "bg-orange-400 text-white border-orange-500 shadow-sm transform scale-110";
+                                    titleText = `${d}: Solo Mañana`;
                                   } else if (resState === 'ONLY_EVENING') {
-                                    btnClass = "bg-indigo-500 text-white border-indigo-600 hover:bg-indigo-600 scale-105 shadow-sm";
-                                    titleText = `${d}: Solo puede trabajar en Tarde/Noche (12p-9p)`;
+                                    btnClass = "bg-indigo-500 text-white border-indigo-600 shadow-sm transform scale-110";
+                                    titleText = `${d}: Solo Tarde`;
                                   }
 
                                   return (
@@ -499,7 +530,7 @@
                                       key={`btn-${emp.id}-${d}`}
                                       onClick={() => toggleRestriction(emp.id, d)}
                                       title={titleText}
-                                      className={`w-[20px] h-[20px] text-[9px] font-bold rounded flex items-center justify-center transition-all ${btnClass}`}
+                                      className={`w-[22px] h-[22px] md:w-[26px] md:h-[26px] text-[9px] md:text-[10px] font-bold rounded flex items-center justify-center transition-all ${btnClass}`}
                                     >
                                       {DAY_ABBR[d]}
                                     </button>
@@ -509,16 +540,16 @@
                             </td>
                             
                             {DAYS.map(day => (
-                              <td key={`${emp.id}-${day}`} className="border border-gray-300 p-0 relative h-8 bg-white">
+                              <td key={`${emp.id}-${day}`} className="border-r border-gray-200 p-0 relative h-10 md:h-12 bg-white">
                                 <select
                                   value={schedule[emp.id]?.[day] || ''}
                                   onChange={(e) => updateCell(emp.id, day, e.target.value)}
-                                  className={`w-full h-full appearance-none bg-transparent text-center text-[11px] focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer transition-colors ${getCellColor(schedule[emp.id]?.[day])}`}
+                                  className={`w-full h-full appearance-none bg-transparent text-center text-[10px] md:text-[11px] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 cursor-pointer transition-colors ${getCellColor(schedule[emp.id]?.[day])}`}
                                   style={{ textAlignLast: 'center' }}
                                 >
                                   <option value=""></option>
-                                  <option value={SHIFTS.MORNING} className="text-gray-800">{SHIFTS.MORNING}</option>
-                                  <option value={SHIFTS.EVENING} className="text-gray-800">{SHIFTS.EVENING}</option>
+                                  <option value={SHIFTS.MORNING} className="text-gray-900 font-medium">{SHIFTS.MORNING}</option>
+                                  <option value={SHIFTS.EVENING} className="text-gray-900 font-medium">{SHIFTS.EVENING}</option>
                                   <option value={SHIFTS.OFF} className="text-red-600 font-bold">{SHIFTS.OFF}</option>
                                 </select>
                               </td>
@@ -527,21 +558,22 @@
                         ))}
                         
                         <tr className="bg-gray-100 border-t-2 border-gray-400">
-                          <td colSpan={2} className="py-2 px-3 text-xs font-bold text-gray-600 text-right border border-gray-300">
-                            Cobertura Mañana (7a-4p):
+                          {/* STICKY TOTALES */}
+                          <td colSpan={2} className="py-3 px-3 text-xs md:text-sm font-bold text-gray-700 text-right border border-gray-300 sticky left-0 z-20 bg-gray-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                            Total Mañana (7a-4p):
                           </td>
                           {DAYS.map(day => (
-                            <td key={`tot-m-${day}`} className="py-2 text-center text-xs font-bold text-blue-800 border border-gray-300">
+                            <td key={`tot-m-${day}`} className="py-3 text-center text-sm md:text-base font-black text-blue-700 border border-gray-300">
                               {getDailyTotals(day).morning}
                             </td>
                           ))}
                         </tr>
                         <tr className="bg-gray-100">
-                          <td colSpan={2} className="py-2 px-3 text-xs font-bold text-gray-600 text-right border border-gray-300">
-                            Cobertura Tarde/Noche (12p-9p):
+                          <td colSpan={2} className="py-3 px-3 text-xs md:text-sm font-bold text-gray-700 text-right border border-gray-300 sticky left-0 z-20 bg-gray-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                            Total Tarde/Noche (12p-9p):
                           </td>
                           {DAYS.map(day => (
-                            <td key={`tot-e-${day}`} className="py-2 text-center text-xs font-bold text-blue-800 border border-gray-300">
+                            <td key={`tot-e-${day}`} className="py-3 text-center text-sm md:text-base font-black text-blue-700 border border-gray-300">
                               {getDailyTotals(day).evening}
                             </td>
                           ))}

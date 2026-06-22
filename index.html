@@ -16,28 +16,14 @@
       }
     }
     </script>
-    
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
     <style>
-        /* Mejoras adicionales para scrolling suave en móviles */
-        .scrolling-touch {
-            -webkit-overflow-scrolling: touch;
-        }
-        /* Ocultar scrollbar en tablas para diseño más limpio, pero permitir scroll */
-        .hide-scrollbar::-webkit-scrollbar {
-            height: 6px;
-        }
-        .hide-scrollbar::-webkit-scrollbar-track {
-            background: #f1f1f1; 
-            border-radius: 4px;
-        }
-        .hide-scrollbar::-webkit-scrollbar-thumb {
-            background: #cbd5e1; 
-            border-radius: 4px;
-        }
-        .hide-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8; 
-        }
+        .scrolling-touch { -webkit-overflow-scrolling: touch; }
+        .hide-scrollbar::-webkit-scrollbar { height: 6px; }
+        .hide-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        .hide-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .hide-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
 </head>
 <body class="bg-gray-100 antialiased text-gray-800 selection:bg-blue-200">
@@ -46,6 +32,22 @@
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect, useCallback } from 'react';
         import { createRoot } from 'react-dom/client';
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        let db, auth, appId;
+        try {
+            appId = typeof __app_id !== 'undefined' ? __app_id : 'bar-horarios-app';
+            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+            if (firebaseConfig) {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+            }
+        } catch (e) {
+            console.error("No se pudo iniciar la base de datos", e);
+        }
 
         const EMPLOYEES = [
           { id: 1, name: 'ANDRES ARROYAVE', type: 'vinculado' },
@@ -83,22 +85,29 @@
           DOMINGO: { hospedaje: 45, diaSol: 8 }
         };
 
+        const getInitialEmptySchedule = () => {
+            const initial = {};
+            EMPLOYEES.forEach(emp => {
+                initial[emp.id] = {};
+                DAYS.forEach(day => initial[emp.id][day] = SHIFTS.EMPTY);
+            });
+            return initial;
+        };
+
         function HorarioBarApp() {
-          const [schedule, setSchedule] = useState({});
+          const [schedule, setSchedule] = useState(getInitialEmptySchedule());
           const [weekLabel, setWeekLabel] = useState('22 - 28 JUNIO');
           const [isGenerating, setIsGenerating] = useState(false);
           const [useApoyo, setUseApoyo] = useState(false); 
           
-          // Vista por defecto ahora es 'portal'
           const [currentView, setCurrentView] = useState('portal');
           const [portalUserId, setPortalUserId] = useState(0);
           
-          // Estados para el login de admin
           const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
           const [showAuthModal, setShowAuthModal] = useState(false);
           const [passwordInput, setPasswordInput] = useState('');
           const [authError, setAuthError] = useState('');
-          const ADMIN_PASSWORD = '1234'; // Código de acceso
+          const ADMIN_PASSWORD = '1234'; 
           
           const [occupancy, setOccupancy] = useState(INITIAL_OCCUPANCY);
           const [prevSundayHospedaje, setPrevSundayHospedaje] = useState(45); 
@@ -108,12 +117,66 @@
           const [paxPerWorker, setPaxPerWorker] = useState(10); 
           
           const [calculatedDemand, setCalculatedDemand] = useState({});
+          const [restrictions, setRestrictions] = useState({});
+          const [isDbReady, setIsDbReady] = useState(false);
 
-          const [restrictions, setRestrictions] = useState({
-            1: { LUNES: 'BLOCKED_ALL' },
-            2: { MARTES: 'BLOCKED_ALL' },
-            3: { MIERCOLES: 'BLOCKED_ALL' }
-          });
+          useEffect(() => {
+            if (!auth || !db) {
+                setIsDbReady(true);
+                return;
+            }
+
+            const initDb = async () => {
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'bar_schedule', 'main');
+                    const unsub = onSnapshot(docRef, (docSnap) => {
+                        if (docSnap.exists()) {
+                            const data = docSnap.data();
+                            if (data.schedule) setSchedule(data.schedule);
+                            if (data.occupancy) setOccupancy(data.occupancy);
+                            if (data.weekLabel) setWeekLabel(data.weekLabel);
+                            if (data.restrictions) setRestrictions(data.restrictions);
+                            if (data.prevSundayHospedaje !== undefined) setPrevSundayHospedaje(data.prevSundayHospedaje);
+                            if (data.capacity !== undefined) setCapacity(data.capacity);
+                            if (data.thresholds) setThresholds(data.thresholds);
+                            if (data.paxPerWorker !== undefined) setPaxPerWorker(data.paxPerWorker);
+                            if (data.useApoyo !== undefined) setUseApoyo(data.useApoyo);
+                        }
+                        setIsDbReady(true);
+                    }, (error) => {
+                        console.error("Error sincronizando", error);
+                        setIsDbReady(true);
+                    });
+                    return unsub;
+                } catch (e) {
+                    console.error("Auth error", e);
+                    setIsDbReady(true);
+                }
+            };
+
+            let unsubPromise = initDb();
+            return () => {
+                unsubPromise.then(unsub => {
+                    if (unsub) unsub();
+                });
+            }
+          }, []);
+
+          const saveStateToFirebase = async (dataToUpdate) => {
+              if (!auth || !auth.currentUser || !db) return;
+              try {
+                  const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'bar_schedule', 'main');
+                  await setDoc(docRef, dataToUpdate, { merge: true });
+              } catch (e) {
+                  console.error("Error guardando datos", e);
+              }
+          };
 
           const getDemandLevel = useCallback((count) => {
             const percentage = (count / capacity) * 100;
@@ -159,25 +222,19 @@
             setCalculatedDemand(newDemand);
           }, [occupancy, prevSundayHospedaje, capacity, getDemandLevel, paxPerWorker]);
 
-          useEffect(() => {
-            clearSchedule();
-          }, []);
-
           const clearSchedule = () => {
-            const newSchedule = {};
-            EMPLOYEES.forEach(emp => {
-              newSchedule[emp.id] = {};
-              DAYS.forEach(day => newSchedule[emp.id][day] = SHIFTS.EMPTY);
-            });
+            const newSchedule = getInitialEmptySchedule();
             setSchedule(newSchedule);
+            saveStateToFirebase({ schedule: newSchedule });
           };
 
           const handleOccupancyChange = (day, field, value) => {
             const numValue = parseInt(value) || 0;
-            setOccupancy(prev => ({
-              ...prev,
-              [day]: { ...prev[day], [field]: numValue }
-            }));
+            setOccupancy(prev => {
+              const newOcc = { ...prev, [day]: { ...prev[day], [field]: numValue } };
+              saveStateToFirebase({ occupancy: newOcc });
+              return newOcc;
+            });
           };
 
           const generateSchedule = () => {
@@ -273,15 +330,12 @@
               });
             });
 
-            // Post-procesamiento: Asignar 2 turnos "Hora Petro" a cada empleado vinculado
             EMPLOYEES.filter(e => e.type === 'vinculado').forEach(emp => {
-              // Buscar en qué días se le asignó turno laboral
               const workingDays = DAYS.filter(day => 
                 newSchedule[emp.id][day] === SHIFTS.MORNING || 
                 newSchedule[emp.id][day] === SHIFTS.EVENING
               );
               
-              // Seleccionar aleatoriamente máximo 2 días para la reducción
               const shuffledDays = workingDays.sort(() => Math.random() - 0.5);
               const daysToPetro = shuffledDays.slice(0, 2);
               
@@ -296,15 +350,17 @@
 
             setTimeout(() => {
               setSchedule(newSchedule);
+              saveStateToFirebase({ schedule: newSchedule });
               setIsGenerating(false);
             }, 500);
           };
 
           const updateCell = (empId, day, newShift) => {
-            setSchedule(prev => ({
-              ...prev,
-              [empId]: { ...prev[empId], [day]: newShift }
-            }));
+            setSchedule(prev => {
+              const newSch = { ...prev, [empId]: { ...prev[empId], [day]: newShift } };
+              saveStateToFirebase({ schedule: newSch });
+              return newSch;
+            });
           };
 
           const toggleRestriction = (empId, day) => {
@@ -319,13 +375,12 @@
               else nextState = null; 
 
               const newEmpRes = { ...empRestrictions };
-              if (nextState) {
-                newEmpRes[day] = nextState;
-              } else {
-                delete newEmpRes[day];
-              }
+              if (nextState) newEmpRes[day] = nextState;
+              else delete newEmpRes[day];
               
-              return { ...prev, [empId]: newEmpRes };
+              const newRes = { ...prev, [empId]: newEmpRes };
+              saveStateToFirebase({ restrictions: newRes });
+              return newRes;
             });
           };
 
@@ -373,6 +428,15 @@
             }
           };
 
+          if (!isDbReady) {
+             return (
+               <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center font-sans">
+                 <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+                 <p className="text-gray-600 font-bold animate-pulse">Conectando con la nube...</p>
+               </div>
+             );
+          }
+
           return (
             <div className="min-h-screen bg-gray-100 font-sans pb-20">
               
@@ -381,21 +445,12 @@
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
                   <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm transform transition-all">
                     <div className="text-center mb-6">
-                      <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3 text-2xl">
-                        🔒
-                      </div>
+                      <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3 text-2xl">🔒</div>
                       <h3 className="text-xl font-black text-gray-800">Acceso Restringido</h3>
                       <p className="text-xs text-gray-500 mt-1">Ingresa el código para gestionar horarios</p>
                     </div>
                     <form onSubmit={handleAuthSubmit}>
-                      <input
-                        type="password"
-                        value={passwordInput}
-                        onChange={(e) => setPasswordInput(e.target.value)}
-                        placeholder="Código de acceso"
-                        className="w-full p-3 border-2 border-gray-200 rounded-xl mb-1 focus:outline-none focus:border-blue-500 focus:ring-0 text-center text-lg font-bold tracking-widest transition-colors"
-                        autoFocus
-                      />
+                      <input type="password" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} placeholder="Código de acceso" className="w-full p-3 border-2 border-gray-200 rounded-xl mb-1 focus:outline-none focus:border-blue-500 focus:ring-0 text-center text-lg font-bold tracking-widest transition-colors" autoFocus />
                       <div className="h-5">
                         {authError && <p className="text-red-500 text-xs font-bold text-center animate-pulse">{authError}</p>}
                       </div>
@@ -426,16 +481,12 @@
               {/* VISTA DE ADMINISTRADOR */}
               {currentView === 'admin' && (
                 <div className="p-2 sm:p-4 md:p-8 max-w-7xl mx-auto space-y-4 md:space-y-6">
-                
-                {/* Panel de Control Principal */}
                 <div className="bg-white p-4 md:p-6 rounded-xl shadow-md border border-gray-200">
                   <div className="flex flex-col gap-4 mb-4 md:mb-6">
                     <div>
                       <h1 className="text-xl md:text-2xl font-bold text-gray-800 leading-tight">Programador Bar</h1>
                       <p className="text-xs md:text-sm text-gray-500 mt-1">Calcula turnos y personal inteligentemente.</p>
                     </div>
-                    
-                    {/* Botones de Acción (Ancho completo en móvil) */}
                     <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                       <button onClick={generateSchedule} disabled={isGenerating} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white px-6 py-3 md:py-2 rounded-lg font-bold transition-colors flex items-center justify-center shadow-md text-sm md:text-base">
                         {isGenerating ? 'Calculando...' : 'Generar Horario'}
@@ -446,58 +497,49 @@
                     </div>
                   </div>
                   
-                  {/* Controles de Configuración */}
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 mb-2">
-                    
-                    {/* Tarjeta de Semana y Apoyo */}
                     <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 flex flex-col gap-3 shadow-inner">
                       <div>
                         <label className="block text-[11px] md:text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Semana</label>
-                        <input type="text" value={weekLabel} onChange={(e) => setWeekLabel(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm text-sm" />
+                        <input type="text" value={weekLabel} onChange={(e) => { setWeekLabel(e.target.value); saveStateToFirebase({ weekLabel: e.target.value }); }} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm text-sm" />
                       </div>
                       <div>
                         <label className="block text-[11px] md:text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Huéspedes Domingo Anterior</label>
-                        <input type="number" min="0" value={prevSundayHospedaje} onChange={(e) => setPrevSundayHospedaje(parseInt(e.target.value)||0)} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white font-bold text-blue-900 shadow-sm text-sm" />
+                        <input type="number" min="0" value={prevSundayHospedaje} onChange={(e) => { const v = parseInt(e.target.value)||0; setPrevSundayHospedaje(v); saveStateToFirebase({ prevSundayHospedaje: v }); }} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white font-bold text-blue-900 shadow-sm text-sm" />
                       </div>
                       <label className="flex items-center cursor-pointer gap-2 bg-green-50 p-3 rounded-md border border-green-200 mt-auto hover:bg-green-100 transition-colors shadow-sm active:bg-green-200">
-                        <input type="checkbox" checked={useApoyo} onChange={(e) => setUseApoyo(e.target.checked)} className="w-5 h-5 md:w-4 md:h-4 text-green-600 rounded focus:ring-green-500 cursor-pointer" />
+                        <input type="checkbox" checked={useApoyo} onChange={(e) => { setUseApoyo(e.target.checked); saveStateToFirebase({ useApoyo: e.target.checked }); }} className="w-5 h-5 md:w-4 md:h-4 text-green-600 rounded focus:ring-green-500 cursor-pointer" />
                         <span className="text-sm font-bold text-green-800">Usar Apoyo Jugos (Mañanas)</span>
                       </label>
                     </div>
 
-                    {/* Tabla de Ocupación */}
                     <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
-                      {/* Cabecera de Ocupación con Variables Responsivas */}
                       <div className="bg-gradient-to-r from-amber-100 to-amber-200 px-3 py-3 flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-amber-300 gap-3">
                         <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wider">Datos de Ocupación</h3>
                         <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-gray-800 w-full sm:w-auto">
                           <div className="flex items-center gap-1 bg-white px-2 py-1.5 rounded shadow-sm flex-1 sm:flex-none justify-between border border-gray-200">
                             <span>100%:</span>
-                            <input type="number" min="1" value={capacity} onChange={e => setCapacity(parseInt(e.target.value)||1)} className="w-12 px-1 py-0.5 border border-gray-200 rounded text-center outline-none focus:ring-2 focus:ring-blue-500 font-bold"/>
+                            <input type="number" min="1" value={capacity} onChange={e => { const v = parseInt(e.target.value)||1; setCapacity(v); saveStateToFirebase({ capacity: v }); }} className="w-12 px-1 py-0.5 border border-gray-200 rounded text-center outline-none focus:ring-2 focus:ring-blue-500 font-bold"/>
                           </div>
-                          
                           <div className="flex items-center gap-1 bg-blue-50 px-2 py-1.5 rounded border border-blue-200 shadow-sm flex-1 sm:flex-none justify-between">
                             <span className="text-blue-900 font-bold">Pax/Stf:</span>
-                            <input type="number" min="1" value={paxPerWorker} onChange={e => setPaxPerWorker(parseInt(e.target.value)||1)} className="w-10 px-1 py-0.5 border border-blue-300 rounded text-center outline-none focus:ring-2 focus:ring-blue-500 bg-white font-bold"/>
+                            <input type="number" min="1" value={paxPerWorker} onChange={e => { const v = parseInt(e.target.value)||1; setPaxPerWorker(v); saveStateToFirebase({ paxPerWorker: v }); }} className="w-10 px-1 py-0.5 border border-blue-300 rounded text-center outline-none focus:ring-2 focus:ring-blue-500 bg-white font-bold"/>
                           </div>
-
                           <div className="hidden md:flex items-center gap-1 bg-white px-2 py-1.5 rounded shadow-sm border border-gray-200">
                             <span>M {`>=`}%</span>
-                            <input type="number" value={thresholds.media} onChange={e => setThresholds(p => ({...p, media: parseInt(e.target.value)||0}))} className="w-10 px-1 py-0.5 border border-gray-200 rounded text-center outline-none"/>
+                            <input type="number" value={thresholds.media} onChange={e => { const v = parseInt(e.target.value)||0; setThresholds(p => { const newT = {...p, media: v}; saveStateToFirebase({ thresholds: newT }); return newT; }); }} className="w-10 px-1 py-0.5 border border-gray-200 rounded text-center outline-none"/>
                           </div>
                           <div className="hidden md:flex items-center gap-1 bg-white px-2 py-1.5 rounded shadow-sm border border-gray-200">
                             <span>A {`>=`}%</span>
-                            <input type="number" value={thresholds.alta} onChange={e => setThresholds(p => ({...p, alta: parseInt(e.target.value)||0}))} className="w-10 px-1 py-0.5 border border-gray-200 rounded text-center outline-none"/>
+                            <input type="number" value={thresholds.alta} onChange={e => { const v = parseInt(e.target.value)||0; setThresholds(p => { const newT = {...p, alta: v}; saveStateToFirebase({ thresholds: newT }); return newT; }); }} className="w-10 px-1 py-0.5 border border-gray-200 rounded text-center outline-none"/>
                           </div>
                         </div>
                       </div>
                       
-                      {/* Contenedor scrolleable de la tabla ocupación */}
                       <div className="overflow-x-auto hide-scrollbar scrolling-touch">
                         <table className="w-full text-sm min-w-[600px]">
                           <thead className="bg-gray-50 border-b border-gray-200">
                             <tr>
-                              {/* STICKY COLUMN */}
                               <th className="px-3 py-2 text-left font-semibold text-gray-600 sticky left-0 bg-gray-50 z-10 border-r border-gray-200 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]">Día</th>
                               <th className="px-2 py-2 text-center font-semibold text-gray-600">Hosp.</th>
                               <th className="px-2 py-2 text-center font-semibold text-gray-600 border-r border-gray-200">+ Sol</th>
@@ -511,9 +553,7 @@
                               const calc = calculatedDemand[day];
                               return (
                                 <tr key={`occ-${day}`} className="hover:bg-gray-50 bg-white">
-                                  {/* STICKY COLUMN */}
                                   <td className="px-3 py-2 font-bold text-gray-700 text-xs md:text-sm sticky left-0 bg-white z-10 border-r border-gray-200 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.05)]">{DAY_ABBR[day]} - {day.substring(0,3)}</td>
-                                  
                                   <td className="px-2 py-1.5 text-center">
                                     <input type="number" min="0" value={occupancy[day].hospedaje} onChange={(e) => handleOccupancyChange(day, 'hospedaje', e.target.value)} className="w-14 md:w-16 px-1 py-1 text-center border border-gray-300 rounded focus:border-blue-500 focus:ring-2 focus:ring-blue-500 outline-none shadow-inner bg-gray-50 text-sm md:text-base font-medium" />
                                   </td>
@@ -559,29 +599,23 @@
                         </table>
                       </div>
                     </div>
-
                   </div>
                 </div>
 
-                {/* Tabla Principal del Horario */}
                 <div className="bg-white rounded-xl shadow-lg border border-gray-300 overflow-hidden relative">
                   <div className="overflow-x-auto hide-scrollbar scrolling-touch">
                     <table className="w-full border-collapse min-w-[900px]">
                       <thead>
                         <tr>
-                          {/* STICKY CORNER */}
                           <th className="bg-white border border-gray-300 sticky left-0 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)]"></th>
-                          
                           <th colSpan={DAYS.length + 1} className="bg-gray-800 text-white text-center py-2.5 text-sm md:text-lg font-bold border border-gray-700 tracking-wide uppercase">
                             Horario: {weekLabel}
                           </th>
                         </tr>
                         <tr>
-                          {/* STICKY COLUMN HEADER */}
                           <th className="bg-gray-100 border border-gray-300 sticky left-0 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)] px-2 py-2">
                              <div className="text-left text-[10px] md:text-xs font-bold text-gray-600 uppercase tracking-wider">Staff Bar</div>
                           </th>
-                          
                           <th className="bg-gray-50 w-28 md:w-36 border border-gray-300 py-1.5 px-1 text-center align-top">
                             <div className="text-[9px] md:text-[10px] font-bold text-gray-500 uppercase tracking-tight mb-1">Disponibilidad<br/><span className="text-[8px] font-normal lowercase">(Click repetido)</span></div>
                             <div className="flex justify-center gap-1 flex-wrap px-1">
@@ -590,7 +624,6 @@
                               <div className="w-2.5 h-2.5 rounded-full bg-indigo-500" title="Solo Tarde"></div>
                             </div>
                           </th>
-                          
                           {DAYS.map(day => (
                             <th key={`header-${day}`} className="bg-amber-100 text-gray-800 py-2 px-1 text-center text-xs md:text-sm font-bold border border-amber-200 w-24 md:w-32 shadow-sm">
                               {day.substring(0,3).toUpperCase()}
@@ -600,7 +633,6 @@
                       </thead>
                       <tbody className="bg-white">
                         {EMPLOYEES.map(emp => {
-                          // Calcular uso de Hora Petro (2 turnos por semana)
                           let petroCount = 0;
                           if (emp.type === 'vinculado') {
                             DAYS.forEach(d => {
@@ -612,8 +644,6 @@
 
                           return (
                             <tr key={emp.id} className="hover:bg-blue-50 transition-colors group border-b border-gray-200">
-                              
-                              {/* STICKY COLUMN BODY (NOMBRES) */}
                               <td className={`py-2 px-2 md:px-3 text-[11px] md:text-sm font-bold border-r border-gray-300 sticky left-0 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] bg-white
                                 ${emp.type === 'vinculado' ? 'text-blue-900 border-l-4 border-l-blue-500' : 
                                   emp.type === 'apoyo' ? 'text-green-700 bg-green-50 border-l-4 border-l-green-500' : 'text-gray-700 border-l-4 border-l-gray-300'}`}>
@@ -638,25 +668,12 @@
                                     const resState = restrictions[emp.id]?.[d];
                                     let btnClass = "bg-white border border-gray-300 text-gray-400 hover:bg-gray-200";
                                     let titleText = `${d}: Disponible`;
-
-                                    if (resState === 'BLOCKED_ALL') {
-                                      btnClass = "bg-red-500 text-white border-red-600 shadow-sm transform scale-110";
-                                      titleText = `${d}: Bloqueado`;
-                                    } else if (resState === 'ONLY_MORNING') {
-                                      btnClass = "bg-orange-400 text-white border-orange-500 shadow-sm transform scale-110";
-                                      titleText = `${d}: Solo Mañana`;
-                                    } else if (resState === 'ONLY_EVENING') {
-                                      btnClass = "bg-indigo-500 text-white border-indigo-600 shadow-sm transform scale-110";
-                                      titleText = `${d}: Solo Tarde`;
-                                    }
+                                    if (resState === 'BLOCKED_ALL') { btnClass = "bg-red-500 text-white border-red-600 shadow-sm transform scale-110"; titleText = `${d}: Bloqueado`; }
+                                    else if (resState === 'ONLY_MORNING') { btnClass = "bg-orange-400 text-white border-orange-500 shadow-sm transform scale-110"; titleText = `${d}: Solo Mañana`; }
+                                    else if (resState === 'ONLY_EVENING') { btnClass = "bg-indigo-500 text-white border-indigo-600 shadow-sm transform scale-110"; titleText = `${d}: Solo Tarde`; }
 
                                     return (
-                                      <button
-                                        key={`btn-${emp.id}-${d}`}
-                                        onClick={() => toggleRestriction(emp.id, d)}
-                                        title={titleText}
-                                        className={`w-[22px] h-[22px] md:w-[26px] md:h-[26px] text-[9px] md:text-[10px] font-bold rounded flex items-center justify-center transition-all ${btnClass}`}
-                                      >
+                                      <button key={`btn-${emp.id}-${d}`} onClick={() => toggleRestriction(emp.id, d)} title={titleText} className={`w-[22px] h-[22px] md:w-[26px] md:h-[26px] text-[9px] md:text-[10px] font-bold rounded flex items-center justify-center transition-all ${btnClass}`}>
                                         {DAY_ABBR[d]}
                                       </button>
                                     );
@@ -665,12 +682,7 @@
                               </td>
                               {DAYS.map(day => (
                                 <td key={`${emp.id}-${day}`} className="border-r border-gray-200 p-0 relative h-10 md:h-12 bg-white">
-                                  <select
-                                    value={schedule[emp.id]?.[day] || ''}
-                                    onChange={(e) => updateCell(emp.id, day, e.target.value)}
-                                    className={`w-full h-full appearance-none bg-transparent text-center text-[10px] md:text-[11px] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 cursor-pointer transition-colors ${getCellColor(schedule[emp.id]?.[day])}`}
-                                    style={{ textAlignLast: 'center' }}
-                                  >
+                                  <select value={schedule[emp.id]?.[day] || ''} onChange={(e) => updateCell(emp.id, day, e.target.value)} className={`w-full h-full appearance-none bg-transparent text-center text-[10px] md:text-[11px] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 cursor-pointer transition-colors ${getCellColor(schedule[emp.id]?.[day])}`} style={{ textAlignLast: 'center' }}>
                                     <option value=""></option>
                                     <option value={SHIFTS.MORNING} className="text-gray-900 font-medium">{SHIFTS.MORNING}</option>
                                     {emp.type === 'vinculado' && <option value={SHIFTS.MORNING_PETRO} className="text-purple-700 font-bold">{SHIFTS.MORNING_PETRO}</option>}
@@ -685,7 +697,6 @@
                         })}
                         
                         <tr className="bg-gray-100 border-t-2 border-gray-400">
-                          {/* STICKY TOTALES */}
                           <td colSpan={2} className="py-3 px-3 text-xs md:text-sm font-bold text-gray-700 text-right border border-gray-300 sticky left-0 z-20 bg-gray-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                             Total Mañana (7a-4p):
                           </td>
@@ -709,26 +720,19 @@
                     </table>
                   </div>
                 </div>
-
               </div>
               )}
 
               {/* VISTA PORTAL EMPLEADOS */}
               {currentView === 'portal' && (
                 <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6">
-                  
-                  {/* Selector de Empleado */}
                   <div className="bg-white p-5 md:p-8 rounded-xl shadow-md border border-gray-200">
                     <h2 className="text-2xl font-black text-gray-800 mb-2">Portal del Empleado</h2>
-                    <p className="text-sm text-gray-500 mb-6">Consulta tu horario personal y el cronograma general.</p>
+                    <p className="text-sm text-gray-500 mb-6">Consulta tu horario personal y el cronograma general de la semana.</p>
                     
                     <div className="max-w-md">
                       <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">Selecciona tu nombre</label>
-                      <select 
-                        value={portalUserId} 
-                        onChange={e => setPortalUserId(Number(e.target.value))} 
-                        className="w-full p-3 border-2 border-blue-100 focus:border-blue-500 rounded-lg font-bold text-gray-700 outline-none bg-blue-50/30 transition-colors"
-                      >
+                      <select value={portalUserId} onChange={e => setPortalUserId(Number(e.target.value))} className="w-full p-3 border-2 border-blue-100 focus:border-blue-500 rounded-lg font-bold text-gray-700 outline-none bg-blue-50/30 transition-colors">
                         <option value={0}>-- Seleccionar --</option>
                         {EMPLOYEES.map(emp => (
                           <option key={emp.id} value={emp.id}>{emp.name}</option>
@@ -738,15 +742,10 @@
                   </div>
 
                   {portalUserId > 0 && (
-                    <div className="space-y-6 transition-all duration-300">
-                      
-                      {/* Mi Horario Personal */}
+                    <div className="space-y-6 transition-all duration-300 animate-fadeIn">
                       <div className="bg-white p-5 md:p-8 rounded-xl shadow-lg border-t-4 border-t-blue-500 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 p-4 opacity-10">
-                           <span className="text-6xl">📅</span>
-                        </div>
+                        <div className="absolute top-0 right-0 p-4 opacity-10"><span className="text-6xl">📅</span></div>
                         <h3 className="text-xl font-bold mb-4 text-blue-900">Mi Horario: <span className="text-gray-600 font-medium">{weekLabel}</span></h3>
-                        
                         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
                           {DAYS.map(day => {
                             const myShift = schedule[portalUserId]?.[day] || SHIFTS.EMPTY;
@@ -767,7 +766,6 @@
                         </div>
                       </div>
 
-                      {/* Horario General (Solo Lectura) */}
                       <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
                         <div className="bg-gray-800 p-4 border-b border-gray-700">
                           <h3 className="text-lg font-bold text-white">Horario General del Staff</h3>
@@ -778,9 +776,7 @@
                               <tr className="bg-gray-100 border-b border-gray-300">
                                 <th className="py-3 px-4 text-left font-bold text-gray-600 sticky left-0 bg-gray-100 z-10 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]">Compañero</th>
                                 {DAYS.map(day => (
-                                  <th key={`gen-h-${day}`} className="py-3 px-2 text-center font-bold text-gray-600 w-24">
-                                    {DAY_ABBR[day]}
-                                  </th>
+                                  <th key={`gen-h-${day}`} className="py-3 px-2 text-center font-bold text-gray-600 w-24">{DAY_ABBR[day]}</th>
                                 ))}
                               </tr>
                             </thead>
@@ -802,12 +798,10 @@
                           </table>
                         </div>
                       </div>
-
                     </div>
                   )}
                 </div>
               )}
-
             </div>
           );
         }

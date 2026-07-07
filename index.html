@@ -95,11 +95,38 @@
             return initial;
         };
 
+        // --- Persistencia local (localStorage) ---
+        // Guarda el estado en el navegador para que el último horario generado
+        // (y toda la configuración) sobreviva a recargas de página, incluso sin Firebase.
+        const LOCAL_STORAGE_KEY = 'barHorarioApp_v1';
+
+        const loadLocalState = () => {
+            try {
+                const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+                return raw ? JSON.parse(raw) : null;
+            } catch (e) {
+                console.error('No se pudo leer el almacenamiento local', e);
+                return null;
+            }
+        };
+
+        const saveLocalState = (partial) => {
+            try {
+                const current = loadLocalState() || {};
+                const merged = { ...current, ...partial };
+                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(merged));
+            } catch (e) {
+                console.error('No se pudo guardar en el almacenamiento local', e);
+            }
+        };
+
+        const LOCAL_STATE = loadLocalState();
+
         function HorarioBarApp() {
-          const [schedule, setSchedule] = useState(getInitialEmptySchedule());
-          const [weekLabel, setWeekLabel] = useState('22 - 28 JUNIO');
+          const [schedule, setSchedule] = useState(() => LOCAL_STATE?.schedule || getInitialEmptySchedule());
+          const [weekLabel, setWeekLabel] = useState(() => LOCAL_STATE?.weekLabel || '22 - 28 JUNIO');
           const [isGenerating, setIsGenerating] = useState(false);
-          const [useApoyo, setUseApoyo] = useState(false);
+          const [useApoyo, setUseApoyo] = useState(() => LOCAL_STATE?.useApoyo || false);
 
           const [currentView, setCurrentView] = useState('portal');
           const [portalUserId, setPortalUserId] = useState(0);
@@ -110,22 +137,27 @@
           const [authError, setAuthError] = useState('');
           const ADMIN_PASSWORD = 'Sasha';
 
-          const [occupancy, setOccupancy] = useState(INITIAL_OCCUPANCY);
-          const [prevSundayHospedaje, setPrevSundayHospedaje] = useState(45);
+          const [occupancy, setOccupancy] = useState(() => LOCAL_STATE?.occupancy || INITIAL_OCCUPANCY);
+          const [prevSundayHospedaje, setPrevSundayHospedaje] = useState(() => LOCAL_STATE?.prevSundayHospedaje ?? 45);
 
-          const [capacity, setCapacity] = useState(65);
-          const [thresholds, setThresholds] = useState({ media: 50, alta: 70 });
-          const [paxPerWorker, setPaxPerWorker] = useState(10);
+          const [capacity, setCapacity] = useState(() => LOCAL_STATE?.capacity ?? 65);
+          const [thresholds, setThresholds] = useState(() => LOCAL_STATE?.thresholds || { media: 50, alta: 70 });
+          const [paxPerWorker, setPaxPerWorker] = useState(() => LOCAL_STATE?.paxPerWorker ?? 10);
 
           const [calculatedDemand, setCalculatedDemand] = useState({});
-          const [restrictions, setRestrictions] = useState({});
-          const [acumulaDias, setAcumulaDias] = useState({});
-          const [prioridades, setPrioridades] = useState({});
-          const [desactivados, setDesactivados] = useState({});
+          const [restrictions, setRestrictions] = useState(() => LOCAL_STATE?.restrictions || {});
+          const [acumulaDias, setAcumulaDias] = useState(() => LOCAL_STATE?.acumulaDias || {});
+          const [prioridades, setPrioridades] = useState(() => LOCAL_STATE?.prioridades || {});
+          const [desactivados, setDesactivados] = useState(() => LOCAL_STATE?.desactivados || {});
           const [isDbReady, setIsDbReady] = useState(false);
           const [descargando, setDescargando] = useState(false);
-          const [diasFestivos, setDiasFestivos] = useState({});
-          const [lunesFestivo, setLunesFestivo] = useState(false);
+          const [diasFestivos, setDiasFestivos] = useState(() => LOCAL_STATE?.diasFestivos || {});
+          const [lunesFestivo, setLunesFestivo] = useState(() => LOCAL_STATE?.lunesFestivo || false);
+
+          // Snapshot de la ocupación en el momento del último "Generar Horario"
+          // y fecha en que se generó. Sirve para detectar cambios posteriores.
+          const [lastGeneratedAt, setLastGeneratedAt] = useState(() => LOCAL_STATE?.lastGeneratedAt || null);
+          const [scheduleSnapshotOccupancy, setScheduleSnapshotOccupancy] = useState(() => LOCAL_STATE?.scheduleSnapshotOccupancy || null);
 
           useEffect(() => {
             if (!auth || !db) {
@@ -159,6 +191,9 @@
                             if (data.desactivados) setDesactivados(data.desactivados);
                             if (data.diasFestivos) setDiasFestivos(data.diasFestivos);
                             if (data.lunesFestivo !== undefined) setLunesFestivo(data.lunesFestivo);
+                            if (data.lastGeneratedAt !== undefined) setLastGeneratedAt(data.lastGeneratedAt);
+                            if (data.scheduleSnapshotOccupancy !== undefined) setScheduleSnapshotOccupancy(data.scheduleSnapshotOccupancy);
+                            saveLocalState(data);
                         }
                         setIsDbReady(true);
                     }, (error) => {
@@ -188,6 +223,13 @@
               } catch (e) {
                   console.error("Error guardando datos", e);
               }
+          };
+
+          // Guarda siempre en el navegador (localStorage) y, si hay Firebase configurado,
+          // también en la nube. Así el último horario generado nunca se pierde.
+          const persistState = (dataToUpdate) => {
+              saveLocalState(dataToUpdate);
+              saveStateToFirebase(dataToUpdate);
           };
 
           const getDemandLevel = useCallback((count) => {
@@ -237,16 +279,134 @@
           const clearSchedule = () => {
             const newSchedule = getInitialEmptySchedule();
             setSchedule(newSchedule);
-            saveStateToFirebase({ schedule: newSchedule });
+            setScheduleSnapshotOccupancy(null);
+            setLastGeneratedAt(null);
+            persistState({ schedule: newSchedule, scheduleSnapshotOccupancy: null, lastGeneratedAt: null });
           };
 
           const handleOccupancyChange = (day, field, value) => {
             const numValue = parseInt(value) || 0;
             setOccupancy(prev => {
               const newOcc = { ...prev, [day]: { ...prev[day], [field]: numValue } };
-              saveStateToFirebase({ occupancy: newOcc });
+              persistState({ occupancy: newOcc });
               return newOcc;
             });
+          };
+
+          // ¿Cambió la ocupación desde que se generó el último horario?
+          const occupancyChanged = React.useMemo(() => {
+            if (!scheduleSnapshotOccupancy) return false;
+            return JSON.stringify(occupancy) !== JSON.stringify(scheduleSnapshotOccupancy);
+          }, [occupancy, scheduleSnapshotOccupancy]);
+
+          // Sugerencias de personal a ADICIONAR al horario ya generado, comparando
+          // la demanda recalculada (con la ocupación actual) contra lo ya asignado.
+          // No borra ni reordena lo existente: solo propone a quién sumar.
+          const staffToAddSuggestions = React.useMemo(() => {
+            if (!scheduleSnapshotOccupancy) return [];
+
+            const suggestions = [];
+
+            const contarTurnosSemana = (empId) => DAYS.filter(d => {
+              const t = schedule[empId]?.[d];
+              return t === SHIFTS.MORNING || t === SHIFTS.MORNING_PETRO || t === SHIFTS.EVENING || t === SHIFTS.EVENING_PETRO;
+            }).length;
+
+            DAYS.forEach(day => {
+              const demanda = calculatedDemand[day];
+              if (!demanda) return;
+
+              const esFestivo = diasFestivos[day] || (day === 'LUNES' && lunesFestivo);
+              if (esFestivo) return;
+
+              const asignadosManana = EMPLOYEES.filter(e => {
+                const t = schedule[e.id]?.[day];
+                return t === SHIFTS.MORNING || t === SHIFTS.MORNING_PETRO;
+              }).length;
+
+              const asignadosTarde = EMPLOYEES.filter(e => {
+                const t = schedule[e.id]?.[day];
+                return t === SHIFTS.EVENING || t === SHIFTS.EVENING_PETRO;
+              }).length;
+
+              // Igual que en "Generar Horario": reqT (que incluye diaSol) exige que
+              // mañana + tarde se solapen lo suficiente en el turno de la tarde.
+              // Si solo se mira reqM y reqN, un aumento de "día sol" no genera sugerencias.
+              let requiredMorning = demanda.reqM;
+              let requiredEvening = demanda.reqN;
+              const targetAfternoon = demanda.reqT;
+
+              const apoyoEmp = EMPLOYEES.find(e => e.type === 'apoyo' && !desactivados[e.id]);
+              const apoyoAsignadoManana = apoyoEmp && (schedule[apoyoEmp.id]?.[day] === SHIFTS.MORNING || schedule[apoyoEmp.id]?.[day] === SHIFTS.MORNING_PETRO);
+              if (useApoyo && apoyoAsignadoManana) {
+                requiredMorning = Math.max(1, requiredMorning - 1);
+              }
+
+              while (requiredMorning + requiredEvening < targetAfternoon) {
+                if (requiredMorning <= requiredEvening) requiredMorning++;
+                else requiredEvening++;
+              }
+
+              const faltanManana = requiredMorning - asignadosManana;
+              const faltanTarde = requiredEvening - asignadosTarde;
+
+              const yaAsignadoHoy = (empId) => {
+                const t = schedule[empId]?.[day];
+                return t && t !== SHIFTS.OFF && t !== SHIFTS.EMPTY;
+              };
+
+              const yaSugeridoHoy = (empId) => suggestions.some(s => s.day === day && s.empId === empId);
+
+              const elegibles = (turno) => EMPLOYEES.filter(e => {
+                if (desactivados[e.id]) return false;
+                if (yaAsignadoHoy(e.id)) return false;
+                if (yaSugeridoHoy(e.id)) return false;
+                const res = restrictions[e.id]?.[day];
+                if (res === 'BLOCKED_ALL') return false;
+                if (turno === 'MORNING' && res === 'ONLY_EVENING') return false;
+                if (turno === 'EVENING' && res === 'ONLY_MORNING') return false;
+                return true;
+              }).sort((a, b) => contarTurnosSemana(a.id) - contarTurnosSemana(b.id));
+
+              if (faltanManana > 0) {
+                elegibles('MORNING').slice(0, faltanManana).forEach(emp => {
+                  suggestions.push({ day, turnoLabel: 'Mañana', shift: SHIFTS.MORNING, empId: emp.id, empName: emp.name });
+                });
+              }
+
+              if (faltanTarde > 0) {
+                elegibles('EVENING').slice(0, faltanTarde).forEach(emp => {
+                  suggestions.push({ day, turnoLabel: 'Tarde/Noche', shift: SHIFTS.EVENING, empId: emp.id, empName: emp.name });
+                });
+              }
+            });
+
+            return suggestions;
+          }, [calculatedDemand, schedule, diasFestivos, lunesFestivo, desactivados, restrictions, scheduleSnapshotOccupancy, useApoyo]);
+
+          const agregarSugerencia = (sug) => {
+            updateCell(sug.empId, sug.day, sug.shift);
+          };
+
+          const agregarTodasSugerencias = () => {
+            setSchedule(prev => {
+              const newSch = { ...prev };
+              staffToAddSuggestions.forEach(sug => {
+                newSch[sug.empId] = { ...newSch[sug.empId], [sug.day]: sug.shift };
+              });
+              persistState({ schedule: newSch });
+              return newSch;
+            });
+          };
+
+          const formatFechaGeneracion = (iso) => {
+            if (!iso) return 'Nunca';
+            try {
+              const d = new Date(iso);
+              return d.toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            } catch (e) {
+              return 'Nunca';
+            }
           };
 
           const generateSchedule = () => {
@@ -474,8 +634,12 @@
             });
 
             setTimeout(() => {
+              const occupancySnapshot = JSON.parse(JSON.stringify(occupancy));
+              const generatedAt = new Date().toISOString();
               setSchedule(newSchedule);
-              saveStateToFirebase({ schedule: newSchedule });
+              setScheduleSnapshotOccupancy(occupancySnapshot);
+              setLastGeneratedAt(generatedAt);
+              persistState({ schedule: newSchedule, scheduleSnapshotOccupancy: occupancySnapshot, lastGeneratedAt: generatedAt });
               setIsGenerating(false);
             }, 500);
           };
@@ -483,7 +647,7 @@
           const updateCell = (empId, day, newShift) => {
             setSchedule(prev => {
               const newSch = { ...prev, [empId]: { ...prev[empId], [day]: newShift } };
-              saveStateToFirebase({ schedule: newSch });
+              persistState({ schedule: newSch });
               return newSch;
             });
           };
@@ -504,7 +668,7 @@
               else delete newEmpRes[day];
 
               const newRes = { ...prev, [empId]: newEmpRes };
-              saveStateToFirebase({ restrictions: newRes });
+              persistState({ restrictions: newRes });
               return newRes;
             });
           };
@@ -696,18 +860,58 @@
                     </div>
                   </div>
 
+                  <div className="mb-4 text-xs text-gray-500 font-medium">
+                    Último horario generado: <span className="font-bold text-gray-700">{formatFechaGeneracion(lastGeneratedAt)}</span>
+                  </div>
+
+                  {occupancyChanged && (
+                    <div className="mb-6 bg-amber-50 border-2 border-amber-300 rounded-xl p-4 shadow-sm">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                        <div>
+                          <p className="text-sm font-black text-amber-800">⚠️ La ocupación cambió desde el último horario generado</p>
+                          <p className="text-xs text-amber-700 mt-0.5">
+                            {staffToAddSuggestions.length > 0
+                              ? `Se recomienda adicionar ${staffToAddSuggestions.length} turno(s) sin perder lo ya asignado.`
+                              : 'La demanda actual ya está cubierta con el personal asignado.'}
+                          </p>
+                        </div>
+                        {staffToAddSuggestions.length > 0 && (
+                          <button onClick={agregarTodasSugerencias} className="whitespace-nowrap bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg font-bold text-xs md:text-sm shadow-md transition-colors">
+                            + Agregar todos ({staffToAddSuggestions.length})
+                          </button>
+                        )}
+                      </div>
+
+                      {staffToAddSuggestions.length > 0 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                          {staffToAddSuggestions.map((sug, idx) => (
+                            <div key={`sug-${sug.day}-${sug.empId}-${idx}`} className="flex items-center justify-between gap-2 bg-white border border-amber-200 rounded-lg px-3 py-2 shadow-sm">
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-gray-800 truncate">{sug.empName}</p>
+                                <p className="text-[10px] text-gray-500">{sug.day.substring(0,3)} · {sug.turnoLabel}</p>
+                              </div>
+                              <button onClick={() => agregarSugerencia(sug)} className="shrink-0 bg-amber-100 hover:bg-amber-200 text-amber-800 text-[11px] font-bold px-2.5 py-1.5 rounded-md transition-colors">
+                                + Agregar
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 mb-2">
                     <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 flex flex-col gap-3 shadow-inner">
                       <div>
                         <label className="block text-[11px] md:text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Semana</label>
-                        <input type="text" value={weekLabel} onChange={(e) => { setWeekLabel(e.target.value); saveStateToFirebase({ weekLabel: e.target.value }); }} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm text-sm" />
+                        <input type="text" value={weekLabel} onChange={(e) => { setWeekLabel(e.target.value); persistState({ weekLabel: e.target.value }); }} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm text-sm" />
                       </div>
                       <div>
                         <label className="block text-[11px] md:text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Huéspedes Domingo Anterior</label>
-                        <input type="number" min="0" value={prevSundayHospedaje} onChange={(e) => { const v = parseInt(e.target.value)||0; setPrevSundayHospedaje(v); saveStateToFirebase({ prevSundayHospedaje: v }); }} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white font-bold text-blue-900 shadow-sm text-sm" />
+                        <input type="number" min="0" value={prevSundayHospedaje} onChange={(e) => { const v = parseInt(e.target.value)||0; setPrevSundayHospedaje(v); persistState({ prevSundayHospedaje: v }); }} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white font-bold text-blue-900 shadow-sm text-sm" />
                       </div>
                       <label className="flex items-center cursor-pointer gap-2 bg-green-50 p-3 rounded-md border border-green-200 hover:bg-green-100 transition-colors shadow-sm active:bg-green-200">
-                        <input type="checkbox" checked={useApoyo} onChange={(e) => { setUseApoyo(e.target.checked); saveStateToFirebase({ useApoyo: e.target.checked }); }} className="w-5 h-5 md:w-4 md:h-4 text-green-600 rounded focus:ring-green-500 cursor-pointer" />
+                        <input type="checkbox" checked={useApoyo} onChange={(e) => { setUseApoyo(e.target.checked); persistState({ useApoyo: e.target.checked }); }} className="w-5 h-5 md:w-4 md:h-4 text-green-600 rounded focus:ring-green-500 cursor-pointer" />
                         <span className="text-sm font-bold text-green-800">Usar Apoyo Jugos (Mañanas)</span>
                       </label>
                       <div className="bg-blue-50 p-3 rounded-md border border-blue-200 shadow-sm">
@@ -715,7 +919,7 @@
                         <div className="space-y-2">
                           {EMPLOYEES.filter(e => e.type === 'vinculado').map(emp => (
                             <label key={`acumula-${emp.id}`} className="flex items-center cursor-pointer gap-2 hover:bg-blue-100 p-1 rounded transition-colors">
-                              <input type="checkbox" checked={acumulaDias[emp.id] || false} onChange={(e) => { const newAcumula = { ...acumulaDias, [emp.id]: e.target.checked }; setAcumulaDias(newAcumula); saveStateToFirebase({ acumulaDias: newAcumula }); }} className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer" />
+                              <input type="checkbox" checked={acumulaDias[emp.id] || false} onChange={(e) => { const newAcumula = { ...acumulaDias, [emp.id]: e.target.checked }; setAcumulaDias(newAcumula); persistState({ acumulaDias: newAcumula }); }} className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer" />
                               <span className="text-xs font-medium text-blue-800">{emp.name.substring(0, 20)}</span>
                             </label>
                           ))}
@@ -728,8 +932,8 @@
                             <div key={`prio-${emp.id}`} className="flex items-center justify-between gap-2 hover:bg-purple-100 p-1 rounded transition-colors">
                               <span className="text-xs font-medium text-purple-800 flex-1">{emp.name.substring(0, 18)}</span>
                               <div className="flex gap-1">
-                                <button onClick={() => { const newPrio = { ...prioridades, [emp.id]: 1 }; setPrioridades(newPrio); saveStateToFirebase({ prioridades: newPrio }); }} className={`px-2 py-1 rounded text-xs font-bold transition-colors ${prioridades[emp.id] === 1 ? 'bg-purple-600 text-white' : 'bg-white text-purple-600 border border-purple-200 hover:bg-purple-100'}`}>P1</button>
-                                <button onClick={() => { const newPrio = { ...prioridades, [emp.id]: 2 }; setPrioridades(newPrio); saveStateToFirebase({ prioridades: newPrio }); }} className={`px-2 py-1 rounded text-xs font-bold transition-colors ${prioridades[emp.id] === 2 ? 'bg-purple-600 text-white' : 'bg-white text-purple-600 border border-purple-200 hover:bg-purple-100'}`}>P2</button>
+                                <button onClick={() => { const newPrio = { ...prioridades, [emp.id]: 1 }; setPrioridades(newPrio); persistState({ prioridades: newPrio }); }} className={`px-2 py-1 rounded text-xs font-bold transition-colors ${prioridades[emp.id] === 1 ? 'bg-purple-600 text-white' : 'bg-white text-purple-600 border border-purple-200 hover:bg-purple-100'}`}>P1</button>
+                                <button onClick={() => { const newPrio = { ...prioridades, [emp.id]: 2 }; setPrioridades(newPrio); persistState({ prioridades: newPrio }); }} className={`px-2 py-1 rounded text-xs font-bold transition-colors ${prioridades[emp.id] === 2 ? 'bg-purple-600 text-white' : 'bg-white text-purple-600 border border-purple-200 hover:bg-purple-100'}`}>P2</button>
                               </div>
                             </div>
                           ))}
@@ -739,12 +943,12 @@
                         <p className="text-[11px] md:text-xs font-bold text-orange-600 mb-3 uppercase">Días Festivos (sin turnos):</p>
                         <div className="flex flex-wrap gap-2 mb-3">
                           {DAYS.map(day => (
-                            <button key={`festivo-${day}`} onClick={() => { const newFestivos = { ...diasFestivos, [day]: !diasFestivos[day] }; setDiasFestivos(newFestivos); saveStateToFirebase({ diasFestivos: newFestivos }); }} className={`px-3 py-1.5 rounded text-xs font-bold transition-colors ${diasFestivos[day] ? 'bg-orange-600 text-white' : 'bg-white text-orange-600 border border-orange-300 hover:bg-orange-100'}`}>
+                            <button key={`festivo-${day}`} onClick={() => { const newFestivos = { ...diasFestivos, [day]: !diasFestivos[day] }; setDiasFestivos(newFestivos); persistState({ diasFestivos: newFestivos }); }} className={`px-3 py-1.5 rounded text-xs font-bold transition-colors ${diasFestivos[day] ? 'bg-orange-600 text-white' : 'bg-white text-orange-600 border border-orange-300 hover:bg-orange-100'}`}>
                               {day.substring(0, 3)}
                             </button>
                           ))}
                         </div>
-                        <button onClick={() => { const newLunes = !lunesFestivo; setLunesFestivo(newLunes); saveStateToFirebase({ lunesFestivo: newLunes }); }} className={`w-full px-4 py-2 rounded text-sm font-bold transition-colors ${lunesFestivo ? 'bg-red-600 text-white' : 'bg-white text-red-600 border-2 border-red-400 hover:bg-red-100'}`}>
+                        <button onClick={() => { const newLunes = !lunesFestivo; setLunesFestivo(newLunes); persistState({ lunesFestivo: newLunes }); }} className={`w-full px-4 py-2 rounded text-sm font-bold transition-colors ${lunesFestivo ? 'bg-red-600 text-white' : 'bg-white text-red-600 border-2 border-red-400 hover:bg-red-100'}`}>
                           {lunesFestivo ? '✓ LUNES FESTIVO' : 'LUNES FESTIVO'}
                         </button>
                       </div>
@@ -753,7 +957,7 @@
                         <div className="space-y-2">
                           {EMPLOYEES.map(emp => (
                             <label key={`desact-${emp.id}`} className="flex items-center cursor-pointer gap-2 hover:bg-red-100 p-1 rounded transition-colors">
-                              <input type="checkbox" checked={desactivados[emp.id] || false} onChange={(e) => { const newDesact = { ...desactivados, [emp.id]: e.target.checked }; setDesactivados(newDesact); saveStateToFirebase({ desactivados: newDesact }); }} className="w-4 h-4 text-red-600 rounded focus:ring-red-500 cursor-pointer" />
+                              <input type="checkbox" checked={desactivados[emp.id] || false} onChange={(e) => { const newDesact = { ...desactivados, [emp.id]: e.target.checked }; setDesactivados(newDesact); persistState({ desactivados: newDesact }); }} className="w-4 h-4 text-red-600 rounded focus:ring-red-500 cursor-pointer" />
                               <span className="text-xs font-medium text-red-800 flex-1">{emp.name.substring(0, 22)}</span>
                               <span className={`text-[10px] px-1.5 py-0.5 rounded ${emp.type === 'vinculado' ? 'bg-blue-100 text-blue-700' : emp.type === 'apoyo' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>{emp.type === 'vinculado' ? 'Vinc.' : emp.type === 'apoyo' ? 'Apoyo' : 'NoVinc.'}</span>
                             </label>
@@ -768,19 +972,19 @@
                         <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-gray-800 w-full sm:w-auto">
                           <div className="flex items-center gap-1 bg-white px-2 py-1.5 rounded shadow-sm flex-1 sm:flex-none justify-between border border-gray-200">
                             <span>100%:</span>
-                            <input type="number" min="1" value={capacity} onChange={e => { const v = parseInt(e.target.value)||1; setCapacity(v); saveStateToFirebase({ capacity: v }); }} className="w-12 px-1 py-0.5 border border-gray-200 rounded text-center outline-none focus:ring-2 focus:ring-blue-500 font-bold"/>
+                            <input type="number" min="1" value={capacity} onChange={e => { const v = parseInt(e.target.value)||1; setCapacity(v); persistState({ capacity: v }); }} className="w-12 px-1 py-0.5 border border-gray-200 rounded text-center outline-none focus:ring-2 focus:ring-blue-500 font-bold"/>
                           </div>
                           <div className="flex items-center gap-1 bg-blue-50 px-2 py-1.5 rounded border border-blue-200 shadow-sm flex-1 sm:flex-none justify-between">
                             <span className="text-blue-900 font-bold">Pax/Stf:</span>
-                            <input type="number" min="1" value={paxPerWorker} onChange={e => { const v = parseInt(e.target.value)||1; setPaxPerWorker(v); saveStateToFirebase({ paxPerWorker: v }); }} className="w-10 px-1 py-0.5 border border-blue-300 rounded text-center outline-none focus:ring-2 focus:ring-blue-500 bg-white font-bold"/>
+                            <input type="number" min="1" value={paxPerWorker} onChange={e => { const v = parseInt(e.target.value)||1; setPaxPerWorker(v); persistState({ paxPerWorker: v }); }} className="w-10 px-1 py-0.5 border border-blue-300 rounded text-center outline-none focus:ring-2 focus:ring-blue-500 bg-white font-bold"/>
                           </div>
                           <div className="hidden md:flex items-center gap-1 bg-white px-2 py-1.5 rounded shadow-sm border border-gray-200">
                             <span>M {`>=`}%</span>
-                            <input type="number" value={thresholds.media} onChange={e => { const v = parseInt(e.target.value)||0; setThresholds(p => { const newT = {...p, media: v}; saveStateToFirebase({ thresholds: newT }); return newT; }); }} className="w-10 px-1 py-0.5 border border-gray-200 rounded text-center outline-none"/>
+                            <input type="number" value={thresholds.media} onChange={e => { const v = parseInt(e.target.value)||0; setThresholds(p => { const newT = {...p, media: v}; persistState({ thresholds: newT }); return newT; }); }} className="w-10 px-1 py-0.5 border border-gray-200 rounded text-center outline-none"/>
                           </div>
                           <div className="hidden md:flex items-center gap-1 bg-white px-2 py-1.5 rounded shadow-sm border border-gray-200">
                             <span>A {`>=`}%</span>
-                            <input type="number" value={thresholds.alta} onChange={e => { const v = parseInt(e.target.value)||0; setThresholds(p => { const newT = {...p, alta: v}; saveStateToFirebase({ thresholds: newT }); return newT; }); }} className="w-10 px-1 py-0.5 border border-gray-200 rounded text-center outline-none"/>
+                            <input type="number" value={thresholds.alta} onChange={e => { const v = parseInt(e.target.value)||0; setThresholds(p => { const newT = {...p, alta: v}; persistState({ thresholds: newT }); return newT; }); }} className="w-10 px-1 py-0.5 border border-gray-200 rounded text-center outline-none"/>
                           </div>
                         </div>
                       </div>
